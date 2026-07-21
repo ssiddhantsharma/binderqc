@@ -1,6 +1,6 @@
-"""Command-line entry point: `terminal-accessibility`.
+"""Command-line entry point: `binderqc`.
 
-    terminal-accessibility --binder-chains B --target-chains A \
+    binderqc --binder-chains B --target-chains A \
         --out tag_metrics.csv path/to/preds/*.cif a_directory/
 
 Inputs may be files, globs, or directories (recursively scanned for *.pdb/*.cif).
@@ -25,7 +25,7 @@ ambiguous or interface-facing cases. Just geometry: no folding, no GPU, no netwo
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        prog="terminal-accessibility",
+        prog="binderqc",
         description=_DESCRIPTION,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -36,7 +36,7 @@ def main(argv=None):
                     help="heavy-atom dist (A) to call a binder residue interface (default 5.0)")
     ap.add_argument("--exposure-cutoff", type=float, default=0.25,
                     help="relSASA below which a terminus is buried (default 0.25)")
-    ap.add_argument("--out", default="terminal_accessibility.csv", help="output CSV path")
+    ap.add_argument("--out", default="binderqc.csv", help="output CSV path")
     args = ap.parse_args(argv)
 
     import pandas as pd  # imported here so `--help` works without pandas

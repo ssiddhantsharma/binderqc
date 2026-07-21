@@ -1,4 +1,4 @@
-"""Tests for the terminal-accessibility scorer.
+"""Tests for the binderqc scorer.
 
 Example data: PDB 7JZU -- the de novo designed minibinder LCB1 (chain A, 55 aa)
 bound to the SARS-CoV-2 RBD (chain B), from Cao et al., Science 2020. LCB1 is a
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from terminal_accessibility import score_structure
+from binderqc import score_structure
 
 FIXTURE = Path(__file__).parent / "data" / "7JZU_LCB1_RBD.pdb"
 
@@ -96,7 +96,7 @@ def test_expression_signals_in_range(row):
 
 def test_charge_and_pi_logic():
     # Polybasic -> high pI + positive charge; polyacidic -> low pI + negative.
-    from terminal_accessibility.core import _net_charge, _isoelectric_point
+    from binderqc.core import _net_charge, _isoelectric_point
     assert _isoelectric_point("K" * 10) > 9.0
     assert _isoelectric_point("E" * 10) < 5.0
     assert _net_charge("K" * 10) > 0
@@ -106,7 +106,7 @@ def test_charge_and_pi_logic():
 def test_protparam_formulas():
     # Check the formulas self-consistently + a physical MW range (no memorized
     # external numbers, which are the classic fabrication trap).
-    from terminal_accessibility.core import _protparam
+    from binderqc.core import _protparam
     seq = "FVNQHLCGSHLVEALYLVCGERGFFYTPKT"   # 30-mer
     pp = _protparam(seq)
     assert 30 * 100 < pp["mw"] < 30 * 140                       # ~110 Da/residue
@@ -136,7 +136,7 @@ def test_nonstandard_residue_relsasa_is_nan():
     # never 0 -- the "unknown, don't guess" contract.
     import numpy as np
     import biotite.structure as struc
-    from terminal_accessibility.core import _residue_relsasa
+    from binderqc.core import _residue_relsasa
 
     atom = struc.Atom([0.0, 0.0, 0.0], chain_id="A", res_id=1,
                       res_name="PCA", atom_name="CA", element="C")

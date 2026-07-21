@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import pearsonr, spearmanr, linregress
 import biotite.structure as struc
 
-from terminal_accessibility.core import _load_protein, _chain_lengths
+from binderqc.core import _load_protein, _chain_lengths
 
 HERE = Path(__file__).parent
 PDBS = ["2PTC", "3SGB", "1PPF", "1CHO", "1ACB", "1DFJ", "1EMV", "1FSS", "1CSE",
