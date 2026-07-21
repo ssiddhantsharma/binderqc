@@ -134,34 +134,6 @@ One row per `(structure, binder_chain)`:
 `recommended_tag ("N" | "C" | "N/A"), mw, gravy, net_charge_ph74, pi, ext_coeff_280,`
 `sequence_liabilities, warnings`
 
-## Related work and design notes
-
-The signals here are lightweight reimplementations of ideas from other tools,
-kept to biotite/numpy so the package stays MIT and dependency-light. Concepts,
-not code or dependencies:
-
-- **Interface size and pose.** [STCRpy](https://doi.org/10.1093/bioinformatics/btaf566)
-  (Bioinformatics, 2025) profiles interface contacts and computes a TCR docking
-  angle, but its contacts come from [PLIP](https://github.com/pharmai/plip)
-  (GPL-2.0) and its angle needs a canonical MHC-groove frame, so it's TCR/MHC
-  only. Buried surface area and the reference-free `approach_angle` here do the
-  same job for any binder, without PLIP.
-- **Sequence liabilities** use the motifs and thresholds from Adaptyv Bio's open
-  [`protein-qc` skill](https://github.com/adaptyvbio/protein-design-skills) (MIT),
-  written out as plain regex.
-- **Grippability** (`epitope_planarity` plus the anchor chemistry): how flat and
-  anchorless the epitope is, which is a real de novo failure mode that neither
-  STCRpy nor SurfDiff measures.
-- **Terminus scoring** is a post-hoc QC read on an existing complex, not a
-  design-time loss like the terminus terms in
-  [BindCraft](https://github.com/martinpacesa/BindCraft).
-
-[SurfDiff](https://gitlab.developers.cam.ac.uk/ch/sormanni/surfdiff) (bioRxiv,
-2025) is a good complement but not a dependency: it scores epitope
-specificity/discriminability from target surfaces before a binder exists (a
-pre-design, target-selection step), whereas this tool triages the complex you
-already have. Use SurfDiff to pick a selective epitope, then this to QC the result.
-
 ## License
 
 MIT
