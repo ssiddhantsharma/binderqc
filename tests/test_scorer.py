@@ -23,7 +23,7 @@ EXPECTED_COLUMNS = {
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
     "recommended_tag", "mw", "gravy", "net_charge_ph74", "pi", "ext_coeff_280",
-    "aromaticity", "aliphatic_index", "sequence_liabilities", "warnings",
+    "sequence_liabilities", "warnings",
 }
 
 
@@ -111,9 +111,6 @@ def test_protparam_formulas():
     pp = _protparam(seq)
     assert 30 * 100 < pp["mw"] < 30 * 140                       # ~110 Da/residue
     assert pp["ext_coeff_280"] == 5500 * seq.count("W") + 1490 * seq.count("Y")
-    assert abs(pp["aromaticity"]
-               - sum(seq.count(a) for a in "FWY") / len(seq)) < 1e-9
-    assert pp["aliphatic_index"] >= 0.0
 
 
 def test_epitope_composition_reported(row):

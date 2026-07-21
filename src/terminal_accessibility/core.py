@@ -246,22 +246,15 @@ _AROMATIC = set("FWY")
 
 
 def _protparam(seq):
-    """A few pressing ProtParam-style sequence properties (exact, no deps):
-    molecular weight, reduced extinction coefficient at 280 nm (Pace 1995),
-    aromaticity (Lobry), and aliphatic index (Ikai 1980).
+    """The two pressing ProtParam-style properties (exact, no deps): molecular
+    weight and reduced extinction coefficient at 280 nm (Pace 1995) -- the
+    numbers you need to express and quantify a construct.
     """
-    n = len(seq)
-    if n == 0:
-        return {"mw": float("nan"), "ext_coeff_280": float("nan"),
-                "aromaticity": float("nan"), "aliphatic_index": float("nan")}
+    if not seq:
+        return {"mw": float("nan"), "ext_coeff_280": float("nan")}
     mw = sum(_RES_MASS.get(a, 0.0) for a in seq) + _WATER
     ext = 5500 * seq.count("W") + 1490 * seq.count("Y")           # reduced Cys
-    aromaticity = sum(seq.count(a) for a in _AROMATIC) / n
-    # Aliphatic index: mole-% weighted volume of A, V, I+L.
-    mp = {a: 100.0 * seq.count(a) / n for a in "AVIL"}
-    ali = mp["A"] + 2.9 * mp["V"] + 3.9 * (mp["I"] + mp["L"])
-    return {"mw": mw, "ext_coeff_280": float(ext),
-            "aromaticity": aromaticity, "aliphatic_index": ali}
+    return {"mw": mw, "ext_coeff_280": float(ext)}
 
 
 def _epitope_composition(array, target_iface):
@@ -474,8 +467,6 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "net_charge_ph74": round(net_charge, 2) if np.isfinite(net_charge) else float("nan"),
         "pi": round(pi, 2) if np.isfinite(pi) else float("nan"),
         "ext_coeff_280": pp["ext_coeff_280"],
-        "aromaticity": round(pp["aromaticity"], 3) if np.isfinite(pp["aromaticity"]) else float("nan"),
-        "aliphatic_index": round(pp["aliphatic_index"], 1) if np.isfinite(pp["aliphatic_index"]) else float("nan"),
         "sequence_liabilities": "; ".join(liabilities),
         "warnings": "; ".join(warnings),
     }

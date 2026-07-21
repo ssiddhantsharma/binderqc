@@ -34,8 +34,8 @@ It also reports, per binder chain, a few whole-complex QC signals:
   sequon, deamidation, polybasic, hydrophobic run);
 - **expression/solubility** (from the binder sequence, no BioPython): `gravy`
   (Kyte–Doolittle; > 0.4 flagged), `net_charge_ph74` and approximate `pi`
-  (Henderson–Hasselbalch), and pressing ProtParam-style properties `mw`,
-  `ext_coeff_280` (Pace 1995), `aromaticity`, `aliphatic_index`.
+  (Henderson–Hasselbalch), and the two pressing ProtParam numbers `mw` and
+  `ext_coeff_280` (Pace 1995 — what you need to express and quantify).
 
 ## Install
 
@@ -77,11 +77,13 @@ binder chain.
 | `--exposure-cutoff` | `0.25` | relSASA below which a terminus is "buried" |
 | `--out` | `terminal_accessibility.csv` | output CSV path |
 
-## Run on Modal (optional)
+## Run on Modal (optional — you almost certainly don't need it)
 
-For a large directory, fan the work out over parallel CPU containers with
-[Modal](https://modal.com). `modal_app.py` imports the installed package, so
-install it into the same environment as `modal`:
+Scoring is a sub-second CPU calculation per structure, so a normal set (even a few
+hundred binders) runs in a minute or two locally — no cluster required. Modal is
+only a convenience for very large batches (thousands), where it fans the same
+CPU-only scorer out over parallel containers. `modal_app.py` imports the installed
+package, so install it into the same environment as `modal`:
 
 ```bash
 pip install -e ".[modal]"
@@ -119,7 +121,7 @@ One row per `(structure, binder_chain)`:
 `nterm_resnum, nterm_resname, nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,`
 `cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface, cterm_orientation, cterm_sg_sasa,`
 `recommended_tag ("N" | "C" | "N/A"), mw, gravy, net_charge_ph74, pi, ext_coeff_280,`
-`aromaticity, aliphatic_index, sequence_liabilities, warnings`
+`sequence_liabilities, warnings`
 
 ## Related work & design notes
 
