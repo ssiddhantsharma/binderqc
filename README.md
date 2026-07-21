@@ -28,7 +28,10 @@ It also reports, per binder chain, a few whole-complex QC signals:
 - **`epitope_planarity`** (Å) — RMSD of the epitope Cα patch to its best-fit
   plane: small = flat/low-grippability (flagged under 1 Å), larger = concave;
 - **`sequence_liabilities`** — sequence motifs to inspect (odd-Cys, N-glyc
-  sequon, deamidation, polybasic, hydrophobic run).
+  sequon, deamidation, polybasic, hydrophobic run);
+- **`gravy`, `net_charge_ph74`, `pi`** — expression/solubility hints from the
+  binder sequence (Kyte–Doolittle hydropathy; charge at pH 7.4 and approximate pI
+  by Henderson–Hasselbalch). GRAVY > 0.4 is flagged as an aggregation risk.
 
 ## Install
 
@@ -111,7 +114,7 @@ One row per `(structure, binder_chain)`:
 `approach_angle, epitope_planarity,`
 `nterm_resnum, nterm_resname, nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,`
 `cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface, cterm_orientation, cterm_sg_sasa,`
-`recommended_tag ("N" | "C" | "N/A"), sequence_liabilities, warnings`
+`recommended_tag ("N" | "C" | "N/A"), gravy, net_charge_ph74, pi, sequence_liabilities, warnings`
 
 ## Related work & design notes
 

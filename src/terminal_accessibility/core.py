@@ -214,6 +214,54 @@ def _sequence_liabilities(seq):
     return flags
 
 
+# Kyte & Doolittle 1982 hydropathy.
+_KD = {
+    "A": 1.8, "R": -4.5, "N": -3.5, "D": -3.5, "C": 2.5, "Q": -3.5, "E": -3.5,
+    "G": -0.4, "H": -3.2, "I": 4.5, "L": 3.8, "K": -3.9, "M": 1.9, "F": 2.8,
+    "P": -1.6, "S": -0.8, "T": -0.7, "W": -0.9, "Y": -1.3, "V": 4.2,
+}
+
+# Side-chain / terminus pKa values for charge & pI (a common simple set).
+_PKA_POS = {"K": 10.5, "R": 12.5, "H": 6.0}      # protonated form is positive
+_PKA_NEG = {"D": 3.9, "E": 4.1, "C": 8.5, "Y": 10.1}  # deprotonated form is negative
+_PKA_NTERM, _PKA_CTERM = 9.0, 3.1
+
+
+def _gravy(seq):
+    """Mean Kyte-Doolittle hydropathy (GRAVY). Higher = more hydrophobic."""
+    vals = [_KD[a] for a in seq if a in _KD]
+    return float(np.mean(vals)) if vals else float("nan")
+
+
+def _charge_at_ph(seq, ph):
+    """Net charge of the sequence at a given pH (Henderson-Hasselbalch)."""
+    pos = 1.0 / (1.0 + 10 ** (ph - _PKA_NTERM))
+    for a, pk in _PKA_POS.items():
+        pos += seq.count(a) / (1.0 + 10 ** (ph - pk))
+    neg = 1.0 / (1.0 + 10 ** (_PKA_CTERM - ph))
+    for a, pk in _PKA_NEG.items():
+        neg += seq.count(a) / (1.0 + 10 ** (pk - ph))
+    return pos - neg
+
+
+def _net_charge(seq, ph=7.4):
+    return _charge_at_ph(seq, ph) if seq else float("nan")
+
+
+def _isoelectric_point(seq):
+    """Approximate pI by bisection (pKa-set dependent; treat as a guide)."""
+    if not seq:
+        return float("nan")
+    lo, hi = 0.0, 14.0
+    for _ in range(60):
+        mid = (lo + hi) / 2.0
+        if _charge_at_ph(seq, mid) > 0:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
 def _principal_axis(coords):
     """Unit vector along the direction of greatest variance (long axis)."""
     centered = coords - coords.mean(axis=0)
@@ -307,12 +355,18 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     approach = _approach_angle(binder_ca, paratope, epitope_centroid)
     planarity = _planarity_rmsd(epitope_ca)
 
-    # Sequence-level developability liabilities (Adaptyv protein-qc motifs).
-    liabilities = _sequence_liabilities(_binder_sequence(array, binder_chain))
+    # Sequence-level developability signals (Adaptyv protein-qc motifs/expression).
+    binder_seq = _binder_sequence(array, binder_chain)
+    liabilities = _sequence_liabilities(binder_seq)
+    gravy = _gravy(binder_seq)
+    net_charge = _net_charge(binder_seq)
+    pi = _isoelectric_point(binder_seq)
 
     warnings = []
     if np.isfinite(planarity) and planarity < 1.0:
         warnings.append(f"flat epitope (planarity RMSD={planarity:.2f} A): low grippability")
+    if np.isfinite(gravy) and gravy > 0.4:
+        warnings.append(f"hydrophobic (GRAVY={gravy:.2f}): solubility/aggregation risk")
     if chain_lens.get(binder_chain) == max(chain_lens.values()):
         warnings.append("binder is the LARGEST chain -- binder/target may be flipped")
     if np.isfinite(binder_bsa) and binder_bsa < 300.0:
@@ -357,6 +411,9 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "cterm_orientation": round(c_orient, 2) if np.isfinite(c_orient) else float("nan"),
         "cterm_sg_sasa": round(c_sg, 2) if np.isfinite(c_sg) else float("nan"),
         "recommended_tag": recommended,
+        "gravy": round(gravy, 3) if np.isfinite(gravy) else float("nan"),
+        "net_charge_ph74": round(net_charge, 2) if np.isfinite(net_charge) else float("nan"),
+        "pi": round(pi, 2) if np.isfinite(pi) else float("nan"),
         "sequence_liabilities": "; ".join(liabilities),
         "warnings": "; ".join(warnings),
     }

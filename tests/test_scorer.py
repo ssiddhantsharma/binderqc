@@ -22,7 +22,7 @@ EXPECTED_COLUMNS = {
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
-    "recommended_tag", "sequence_liabilities", "warnings",
+    "recommended_tag", "gravy", "net_charge_ph74", "pi", "sequence_liabilities", "warnings",
 }
 
 
@@ -86,6 +86,20 @@ def test_pose_and_grippability(row):
 def test_sequence_liabilities_is_a_string(row):
     # May be empty; must never be missing.
     assert isinstance(row["sequence_liabilities"], str)
+
+
+def test_expression_signals_in_range(row):
+    assert -4.5 <= row["gravy"] <= 4.5              # Kyte-Doolittle bounds
+    assert 0.0 <= row["pi"] <= 14.0
+
+
+def test_charge_and_pi_logic():
+    # Polybasic -> high pI + positive charge; polyacidic -> low pI + negative.
+    from terminal_accessibility.core import _net_charge, _isoelectric_point
+    assert _isoelectric_point("K" * 10) > 9.0
+    assert _isoelectric_point("E" * 10) < 5.0
+    assert _net_charge("K" * 10) > 0
+    assert _net_charge("E" * 10) < 0
 
 
 def test_auto_guess_picks_the_small_chain():
