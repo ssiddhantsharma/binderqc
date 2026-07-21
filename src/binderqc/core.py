@@ -284,6 +284,21 @@ def _isoelectric_point(seq):
     return (lo + hi) / 2.0
 
 
+def _sequence_metrics(seq):
+    """Sequence-derived row fields (developability + expression), pre-rounded."""
+    pp = _protparam(seq)
+    gravy = _gravy(seq)
+    return {
+        "mw": round(pp["mw"], 1) if np.isfinite(pp["mw"]) else float("nan"),
+        "gravy": round(gravy, 3) if np.isfinite(gravy) else float("nan"),
+        "net_charge_ph74": round(_net_charge(seq), 2) if seq else float("nan"),
+        "pi": round(_isoelectric_point(seq), 2) if seq else float("nan"),
+        "ext_coeff_280": pp["ext_coeff_280"],
+        "sequence_liabilities": "; ".join(_sequence_liabilities(seq)),
+        "binder_sequence": seq,
+    }
+
+
 def _principal_axis(coords):
     """Unit vector along the long axis (direction of most spread)."""
     centered = coords - coords.mean(axis=0)
@@ -376,42 +391,43 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     planarity = _planarity_rmsd(epitope_ca)
     epi_hyd_frac, epi_aromatic_n = _epitope_composition(array, target_iface)
 
-    # sequence-side developability (reuse the one sequence we pull out)
+    # sequence-side developability + expression
     binder_seq = _binder_sequence(array, binder_chain)
-    liabilities = _sequence_liabilities(binder_seq)
-    gravy = _gravy(binder_seq)
-    net_charge = _net_charge(binder_seq)
-    pi = _isoelectric_point(binder_seq)
-    pp = _protparam(binder_seq)
+    seqm = _sequence_metrics(binder_seq)
 
-    warnings = []
+    # quality warnings say the binder/interface itself looks bad; tag-site
+    # warnings are only about where to put a tag. qc_pass ignores the latter.
+    quality, tagsite = [], []
     if np.isfinite(planarity) and planarity < 1.0:
-        warnings.append(f"flat epitope (planarity RMSD={planarity:.2f} A): low grippability")
+        quality.append(f"flat epitope (planarity RMSD={planarity:.2f} A): low grippability")
     if np.isfinite(epi_hyd_frac) and epi_hyd_frac < 0.2 and epi_aromatic_n == 0:
-        warnings.append("polar epitope (few hydrophobic/aromatic anchors): hard to grip")
-    if np.isfinite(gravy) and gravy > 0.4:
-        warnings.append(f"hydrophobic (GRAVY={gravy:.2f}): solubility/aggregation risk")
+        quality.append("polar epitope (few hydrophobic/aromatic anchors): hard to grip")
+    if np.isfinite(seqm["gravy"]) and seqm["gravy"] > 0.4:
+        quality.append(f"hydrophobic (GRAVY={seqm['gravy']:.2f}): solubility/aggregation risk")
     if chain_lens.get(binder_chain) == max(chain_lens.values()):
-        warnings.append("binder is the largest chain, so binder/target may be flipped")
+        quality.append("binder is the largest chain, so binder/target may be flipped")
     if np.isfinite(binder_bsa) and binder_bsa < 300.0:
-        warnings.append(f"small interface (binder BSA={binder_bsa:.0f} A^2): possibly weak/spurious")
+        quality.append(f"small interface (binder BSA={binder_bsa:.0f} A^2): possibly weak/spurious")
 
     if not interface_ids:
         recommended = "N/A"
-        warnings.append("no interface residues found (check target chains / cutoff)")
+        quality.append("no interface residues found (check target chains / cutoff)")
     else:
         recommended = "C" if (np.nan_to_num(c_dist) >= np.nan_to_num(n_dist)) else "N"
         rec_dist, other_dist = (c_dist, n_dist) if recommended == "C" else (n_dist, c_dist)
         rec_rel = c_rel if recommended == "C" else n_rel
         rec_orient = c_orient if recommended == "C" else n_orient
         if np.isfinite(rec_rel) and rec_rel < exposure_cutoff:
-            warnings.append(f"recommended {recommended}-term is buried (relSASA={rec_rel:.2f})")
+            tagsite.append(f"recommended {recommended}-term is buried (relSASA={rec_rel:.2f})")
         if np.isfinite(rec_dist) and np.isfinite(other_dist) and abs(rec_dist - other_dist) < 5.0:
-            warnings.append("both termini ~equidistant from interface (ambiguous)")
+            tagsite.append("both termini ~equidistant from interface (ambiguous)")
         if np.isfinite(rec_dist) and rec_dist < 8.0:
-            warnings.append(f"recommended terminus is close to interface ({rec_dist:.1f} A)")
+            tagsite.append(f"recommended terminus is close to interface ({rec_dist:.1f} A)")
         if np.isfinite(rec_orient) and rec_orient > 0.5:
-            warnings.append(f"recommended {recommended}-term points toward interface (orientation={rec_orient:.2f})")
+            tagsite.append(f"recommended {recommended}-term points toward interface (orientation={rec_orient:.2f})")
+
+    warnings = quality + tagsite
+    qc_pass = not quality
 
     return {
         "pdb": name,
@@ -437,19 +453,22 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "cterm_orientation": round(c_orient, 2) if np.isfinite(c_orient) else float("nan"),
         "cterm_sg_sasa": round(c_sg, 2) if np.isfinite(c_sg) else float("nan"),
         "recommended_tag": recommended,
-        "mw": round(pp["mw"], 1) if np.isfinite(pp["mw"]) else float("nan"),
-        "gravy": round(gravy, 3) if np.isfinite(gravy) else float("nan"),
-        "net_charge_ph74": round(net_charge, 2) if np.isfinite(net_charge) else float("nan"),
-        "pi": round(pi, 2) if np.isfinite(pi) else float("nan"),
-        "ext_coeff_280": pp["ext_coeff_280"],
-        "sequence_liabilities": "; ".join(liabilities),
+        "mw": seqm["mw"],
+        "gravy": seqm["gravy"],
+        "net_charge_ph74": seqm["net_charge_ph74"],
+        "pi": seqm["pi"],
+        "ext_coeff_280": seqm["ext_coeff_280"],
+        "sequence_liabilities": seqm["sequence_liabilities"],
         "warnings": "; ".join(warnings),
-        "binder_sequence": binder_seq,
+        "qc_pass": qc_pass,
+        "binder_sequence": seqm["binder_sequence"],
     }
 
 
-def score_structure(path, binder_chains=None, target_chains=None,
-                    interface_cutoff=5.0, exposure_cutoff=0.25, verbose=True):
+def score_structure(path: str, binder_chains: "list[str] | None" = None,
+                    target_chains: "list[str] | None" = None,
+                    interface_cutoff: float = 5.0, exposure_cutoff: float = 0.25,
+                    verbose: bool = True) -> "list[dict]":
     """Score every binder chain in one structure file.
 
     binder_chains / target_chains are lists of chain ids. Leave binder_chains

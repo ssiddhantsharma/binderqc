@@ -23,7 +23,7 @@ EXPECTED_COLUMNS = {
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
     "recommended_tag", "mw", "gravy", "net_charge_ph74", "pi", "ext_coeff_280",
-    "sequence_liabilities", "warnings", "binder_sequence",
+    "sequence_liabilities", "warnings", "qc_pass", "binder_sequence",
 }
 
 
@@ -144,3 +144,37 @@ def test_nonstandard_residue_relsasa_is_nan():
     arr = struc.array([atom])
     rel = _residue_relsasa(arr, np.array([12.3]))
     assert math.isnan(rel[("A", 1)])
+
+
+def test_qc_pass_ignores_tag_site_warnings(row):
+    # LCB1's only warning is the ambiguous tag site (an advisory about where to
+    # tag, not a quality problem), so it must still pass QC.
+    assert "ambiguous" in row["warnings"]
+    assert row["qc_pass"] is True
+
+
+def test_cif_input_matches_pdb(tmp_path, row):
+    # The bundled fixture is a PDB; confirm the CIF path gives the same numbers.
+    import biotite.structure.io as strucio
+    arr = strucio.load_structure(str(FIXTURE))
+    cif = tmp_path / "7jzu.cif"
+    strucio.save_structure(str(cif), arr)
+    cif_row = score_structure(str(cif), binder_chains=["A"], target_chains=["B"])[0]
+    assert cif_row["binder_bsa"] == row["binder_bsa"]
+    assert cif_row["recommended_tag"] == row["recommended_tag"]
+    assert cif_row["binder_sequence"] == row["binder_sequence"]
+
+
+def test_multiple_binder_chains_give_multiple_rows():
+    rows = score_structure(str(FIXTURE), binder_chains=["A", "B"])
+    assert len(rows) == 2
+    assert {r["binder_chain"] for r in rows} == {"A", "B"}
+
+
+def test_cli_writes_csv_and_fasta(tmp_path):
+    from binderqc.cli import main
+    out, fa = tmp_path / "out.csv", tmp_path / "clean.fasta"
+    main(["--binder-chains", "A", "--target-chains", "B",
+          "--out", str(out), "--fasta", str(fa), str(FIXTURE)])
+    assert out.exists() and out.read_text().count("\n") >= 2      # header + >=1 row
+    assert fa.read_text().startswith(">")                          # LCB1 passes QC

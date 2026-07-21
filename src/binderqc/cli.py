@@ -39,7 +39,7 @@ def main(argv=None):
                     help="relSASA below which a terminus is buried (default 0.25)")
     ap.add_argument("--out", default="binderqc.csv", help="output CSV path")
     ap.add_argument("--fasta", default="",
-                    help="also write binders with no QC warnings to this FASTA path")
+                    help="also write QC-passing binders (no quality warnings) to this FASTA path")
     args = ap.parse_args(argv)
 
     import pandas as pd  # imported here so `--help` works without pandas
@@ -67,12 +67,12 @@ def main(argv=None):
 
     if args.fasta:
         clean = [r for r in rows
-                 if not r.get("error") and not r.get("warnings") and r.get("binder_sequence")]
+                 if not r.get("error") and r.get("qc_pass") and r.get("binder_sequence")]
         with open(args.fasta, "w") as fh:
             for r in clean:
                 fh.write(f">{os.path.splitext(r['pdb'])[0]}|{r['binder_chain']}\n{r['binder_sequence']}\n")
         scored = sum(1 for r in rows if not r.get("error"))
-        print(f"Wrote {len(clean)}/{scored} binders with no warnings -> {args.fasta}")
+        print(f"Wrote {len(clean)}/{scored} QC-passing binders -> {args.fasta}")
 
 
 if __name__ == "__main__":
