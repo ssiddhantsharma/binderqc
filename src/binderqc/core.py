@@ -444,6 +444,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "ext_coeff_280": pp["ext_coeff_280"],
         "sequence_liabilities": "; ".join(liabilities),
         "warnings": "; ".join(warnings),
+        "binder_sequence": binder_seq,
     }
 
 

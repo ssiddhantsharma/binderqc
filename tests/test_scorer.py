@@ -23,7 +23,7 @@ EXPECTED_COLUMNS = {
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
     "recommended_tag", "mw", "gravy", "net_charge_ph74", "pi", "ext_coeff_280",
-    "sequence_liabilities", "warnings",
+    "sequence_liabilities", "warnings", "binder_sequence",
 }
 
 
@@ -40,6 +40,7 @@ def test_schema(row):
     assert row["binder_chain"] == "A"
     assert row["target_chains"] == "B"
     assert row["binder_len"] == 55
+    assert len(row["binder_sequence"]) == 55
 
 
 def test_finds_an_interface(row):

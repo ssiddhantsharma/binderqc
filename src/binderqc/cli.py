@@ -7,6 +7,7 @@ Inputs may be files, globs, or directories (recursively scanned for *.pdb/*.cif)
 """
 
 import argparse
+import os
 import sys
 
 from .core import score_structure
@@ -37,6 +38,8 @@ def main(argv=None):
     ap.add_argument("--exposure-cutoff", type=float, default=0.25,
                     help="relSASA below which a terminus is buried (default 0.25)")
     ap.add_argument("--out", default="binderqc.csv", help="output CSV path")
+    ap.add_argument("--fasta", default="",
+                    help="also write binders with no QC warnings to this FASTA path")
     args = ap.parse_args(argv)
 
     import pandas as pd  # imported here so `--help` works without pandas
@@ -57,9 +60,19 @@ def main(argv=None):
 
     df = pd.DataFrame(rows)
     df.to_csv(args.out, index=False)
+    shown = df.drop(columns=["binder_sequence"], errors="ignore")  # too wide to print
     with pd.option_context("display.max_columns", None, "display.width", 220):
-        print(df.to_string(index=False))
+        print(shown.to_string(index=False))
     print(f"\nWrote {len(df)} rows -> {args.out}")
+
+    if args.fasta:
+        clean = [r for r in rows
+                 if not r.get("error") and not r.get("warnings") and r.get("binder_sequence")]
+        with open(args.fasta, "w") as fh:
+            for r in clean:
+                fh.write(f">{os.path.splitext(r['pdb'])[0]}|{r['binder_chain']}\n{r['binder_sequence']}\n")
+        scored = sum(1 for r in rows if not r.get("error"))
+        print(f"Wrote {len(clean)}/{scored} binders with no warnings -> {args.fasta}")
 
 
 if __name__ == "__main__":

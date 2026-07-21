@@ -38,6 +38,7 @@ guess the binder as the shortest chain (20–250 aa, printed for each file);
 | `--interface-cutoff` | `5.0` | heavy-atom contact distance (Å) |
 | `--exposure-cutoff` | `0.25` | relSASA below which a terminus is buried |
 | `--out` | `binderqc.csv` | output CSV path |
+| `--fasta` | off | also write binders with no QC warnings to this FASTA |
 
 ## What it reports
 
@@ -57,7 +58,8 @@ anchorless epitopes, small interfaces, hydrophobic sequences, and swapped chains
 Columns: `pdb, binder_chain, target_chains, binder_len, n_interface_res,
 binder_bsa, approach_angle, epitope_planarity, epitope_hydrophobic_frac,
 epitope_aromatic_n, nterm_*, cterm_*, recommended_tag, mw, gravy, net_charge_ph74,
-pi, ext_coeff_280, sequence_liabilities, warnings`.
+pi, ext_coeff_280, sequence_liabilities, warnings, binder_sequence`. Pass `--fasta
+out.fasta` to also dump the binders whose `warnings` column is empty.
 
 ## Tests
 
