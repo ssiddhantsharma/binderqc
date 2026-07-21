@@ -1,41 +1,46 @@
 # terminal-accessibility
 
-Pick the right terminus to tag on a designed protein binder.
+Work out where to put a tag on a designed protein binder, and get a few
+developability QC numbers while you're at it, straight off a predicted
+binder-target complex. No folding, no GPU, no network: just geometry and the
+sequence.
 
-Given predicted **binder–target complex** structures (PDB/CIF), for each binder
+Give it a predicted **binder-target complex** (PDB or CIF) and for each binder
 chain it reports, per terminus (N and C):
 
-- **relative SASA** of the terminal residue (solvent exposure; normalized by the
-  Tien et al. 2013 max-ASA reference) — a buried terminus is a bad tag site;
-- **CA–CA distance to the nearest interface residue** — tagging near the paratope
-  can occlude binding once the binder is immobilized/displayed;
-- **orientation** — cosine of the terminus's outward chain-extension direction
-  against the direction to the paratope centroid: `>0` the chain (and any tag)
-  extends *toward* the target even if far away, `<0` it extends *away* (good);
-- **SG-SASA** if the terminal residue is a cysteine — for site-directed Cys conjugation.
+- **relative SASA** of the terminal residue (how exposed it is; normalized by the
+  Tien et al. 2013 max-ASA reference). A buried terminus is a poor tag site.
+- **CA-CA distance to the nearest interface residue.** Tagging next to the
+  paratope can block binding once the binder is immobilized or displayed.
+- **orientation**: the cosine between the way the chain extends past the terminus
+  and the direction to the paratope. Positive means the chain (and any tag) heads
+  back toward the target even if the terminus is far away; negative means it
+  points away, which is what you want.
+- **SG-SASA** of a terminal cysteine, so you can see whether it's a usable handle
+  for site-directed conjugation.
 
-It then recommends the terminus **farther from the interface**, and warns when
-that terminus is buried, when the two termini are roughly equidistant, when the
-recommended terminus points back toward the interface, or when the binder/target
-chain assignment looks flipped. Pure geometry — no folding, no GPU, no network.
+It recommends the terminus farther from the interface, and warns when that
+terminus is buried, when the two are roughly tied, when it points back at the
+target, or when the binder/target chains look swapped.
 
-It also reports, per binder chain, a few whole-complex QC signals:
+Per binder chain it also reports a handful of whole-complex QC signals:
 
-- **`binder_bsa`** (Å²) — buried surface area; a tiny interface is the strongest
-  single sign of a spurious binder (flagged under 300 Å²);
-- **`approach_angle`** (°, 0–90) — angle between the binder's long axis and the
-  paratope→epitope binding axis: ~0 = end-on, ~90 = lying across the surface;
-- **`epitope_planarity`** (Å) — RMSD of the epitope Cα patch to its best-fit
-  plane: small = flat/low-grippability (flagged under 1 Å), larger = concave;
-- **`epitope_hydrophobic_frac`, `epitope_aromatic_n`** — chemical grippability:
-  fraction of hydrophobic epitope residues and count of aromatic anchors (F/W/Y)
-  a binder can engage. A polar, anchorless epitope is flagged;
-- **`sequence_liabilities`** — sequence motifs to inspect (odd-Cys, N-glyc
-  sequon, deamidation, polybasic, hydrophobic run);
-- **expression/solubility** (from the binder sequence, no BioPython): `gravy`
-  (Kyte–Doolittle; > 0.4 flagged), `net_charge_ph74` and approximate `pi`
-  (Henderson–Hasselbalch), and the two pressing ProtParam numbers `mw` and
-  `ext_coeff_280` (Pace 1995 — what you need to express and quantify).
+- **`binder_bsa`** (Å²): buried surface area. A tiny interface is the clearest
+  sign of a junk binder; anything under 300 Å² gets flagged.
+- **`approach_angle`** (0-90°): binder long axis vs. the paratope-to-epitope axis.
+  Near 0 it points end-on into the target; near 90 it lies across the surface.
+- **`epitope_planarity`** (Å): how flat the epitope Cα patch is (RMSD to its
+  best-fit plane). Flat means little to grip (flagged under 1 Å); larger is more
+  concave.
+- **`epitope_hydrophobic_frac`, `epitope_aromatic_n`**: the anchor chemistry on
+  the epitope (hydrophobic fraction and aromatic count). A flat, polar, anchorless
+  patch is hard to bind, and gets flagged.
+- **`sequence_liabilities`**: motifs worth a look (odd cysteine count, N-glyc
+  sequon, deamidation, polybasic run, hydrophobic run).
+- **expression/solubility**, from the sequence alone (no BioPython): `gravy`
+  (Kyte-Doolittle, flagged above 0.4), `net_charge_ph74` and an approximate `pi`
+  (Henderson-Hasselbalch), plus the two ProtParam numbers you actually reach for,
+  `mw` and `ext_coeff_280` (Pace 1995).
 
 ## Install
 
@@ -43,10 +48,9 @@ It also reports, per binder chain, a few whole-complex QC signals:
 pip install -e .          # or: uv pip install -e .
 ```
 
-Python ≥ 3.10. Dependencies (`biotite`, `numpy`, `pandas`) are pulled in
-automatically.
+Python 3.10+. It pulls in `biotite`, `numpy`, and `pandas`.
 
-## Local usage
+## Usage
 
 ```bash
 terminal-accessibility \
@@ -55,61 +59,68 @@ terminal-accessibility \
     path/to/preds/*.cif some_directory/
 ```
 
-Inputs can be files, globs, or directories (recursively scanned for `*.pdb` / `*.cif`).
-Or from Python:
+Inputs can be files, globs, or directories (walked for `*.pdb` / `*.cif`). From
+Python:
 
 ```python
 from terminal_accessibility import score_structure
 rows = score_structure("complex.pdb", binder_chains=["A"], target_chains=["B"])
 ```
 
-**Chain convention.** Binder/target chains are given explicitly — no length
-heuristic is reliable across target types. If `--binder-chains` is omitted the
-binder is auto-guessed (shortest chain in a 20–250-residue window) and the guess
-is printed for every file. `--target-chains` defaults to every chain that isn't a
-binder chain.
+**Chains.** Give the binder and target chains explicitly; no length rule is
+reliable across target types. If you leave `--binder-chains` off, it guesses the
+binder as the shortest chain in a 20-250 residue window and prints that guess for
+every file. `--target-chains` defaults to every other chain.
 
 | flag | default | meaning |
 |---|---|---|
 | `--binder-chains` | auto-guess | comma-separated binder chain ids |
 | `--target-chains` | all non-binder | comma-separated target chain ids |
-| `--interface-cutoff` | `5.0` | heavy-atom distance (Å) defining an interface residue |
+| `--interface-cutoff` | `5.0` | heavy-atom distance (Å) that counts as a contact |
 | `--exposure-cutoff` | `0.25` | relSASA below which a terminus is "buried" |
 | `--out` | `terminal_accessibility.csv` | output CSV path |
 
-## Run on Modal (optional — you almost certainly don't need it)
+## Modal (optional, and you probably don't need it)
 
-Scoring is a sub-second CPU calculation per structure, so a normal set (even a few
-hundred binders) runs in a minute or two locally — no cluster required. Modal is
-only a convenience for very large batches (thousands), where it fans the same
-CPU-only scorer out over parallel containers. `modal_app.py` imports the installed
-package, so install it into the same environment as `modal`:
+Each structure is a sub-second CPU calculation, so a few hundred binders finish
+in a minute or two on a laptop. Modal is only there for very large batches, where
+it runs the same CPU scorer across parallel containers. `modal_app.py` imports the
+installed package, so put it in the same environment as `modal`:
 
 ```bash
 pip install -e ".[modal]"
 modal run modal_app.py --inputs "path/to/preds" --binder-chains B --target-chains A --out tags.csv
 ```
 
-`--inputs` accepts a directory, a glob, or a comma-separated list. Structure
-files stay on your machine; only their bytes are sent to the container. No GPU,
-no secrets, no volumes.
+`--inputs` takes a directory, a glob, or a comma-separated list. The structures
+stay on your machine; only their bytes go to the container.
 
-## Tests
+## Tests and validation
 
 ```bash
 pip install -e ".[test]"
 pytest
 ```
 
-Tests run against a bundled example: PDB **7JZU** — the de novo designed
-minibinder **LCB1** bound to the SARS-CoV-2 RBD (Cao et al., *Science* 2020).
+The unit tests run against a bundled example, PDB **7JZU** (the de novo minibinder
+LCB1 on the SARS-CoV-2 RBD, Cao et al., Science 2020).
+
+`tests/pisa_correctness.py` is a separate, network-fetching benchmark (not part of
+the pytest run) that checks the interface area against PISA across 18 public
+complexes. It agrees closely (Pearson r ≈ 1.0, slope ≈ 1.0, ~1% median error); see
+`tests/pisa_correctness.png`.
+
+```bash
+pip install -e ".[validation]"
+python tests/pisa_correctness.py
+```
 
 ## Layout
 
 ```
-src/terminal_accessibility/   core.py (scorer) · paths.py · cli.py
+src/terminal_accessibility/   core.py (the scorer) · paths.py · cli.py
 modal_app.py                  Modal wrapper (imports the package)
-tests/                        test_scorer.py · data/7JZU_LCB1_RBD.pdb
+tests/                        test_scorer.py · pisa_correctness.py · data/7JZU_LCB1_RBD.pdb
 ```
 
 ## Output
@@ -123,36 +134,34 @@ One row per `(structure, binder_chain)`:
 `recommended_tag ("N" | "C" | "N/A"), mw, gravy, net_charge_ph74, pi, ext_coeff_280,`
 `sequence_liabilities, warnings`
 
-## Related work & design notes
+## Related work and design notes
 
-Signals here are deliberately lightweight reimplementations of ideas from
-existing tools, kept dependency-light (biotite/numpy only) and MIT-clean —
-concepts, not code or dependencies:
+The signals here are lightweight reimplementations of ideas from other tools,
+kept to biotite/numpy so the package stays MIT and dependency-light. Concepts,
+not code or dependencies:
 
-- **Interface size + pose.** [STCRpy](https://doi.org/10.1093/bioinformatics/btaf566)
-  (Bioinformatics, 2025) profiles interface contacts and computes a TCR *docking
-  angle* — but its contacts come from [PLIP](https://github.com/pharmai/plip)
-  (GPL-2.0), and its angle is measured in a canonical MHC-groove reference frame
-  (TCR/MHC-only). Here, buried surface area and a **reference-free `approach_angle`**
-  give a binder-agnostic analog for *any* target, with no PLIP dependency.
-- **Sequence liabilities.** Motifs/thresholds follow Adaptyv Bio's open
+- **Interface size and pose.** [STCRpy](https://doi.org/10.1093/bioinformatics/btaf566)
+  (Bioinformatics, 2025) profiles interface contacts and computes a TCR docking
+  angle, but its contacts come from [PLIP](https://github.com/pharmai/plip)
+  (GPL-2.0) and its angle needs a canonical MHC-groove frame, so it's TCR/MHC
+  only. Buried surface area and the reference-free `approach_angle` here do the
+  same job for any binder, without PLIP.
+- **Sequence liabilities** use the motifs and thresholds from Adaptyv Bio's open
   [`protein-qc` skill](https://github.com/adaptyvbio/protein-design-skills) (MIT),
-  reimplemented as plain regex.
-- **Grippability (`epitope_planarity`).** Neither STCRpy nor SurfDiff measures how
-  flat/anchorless the epitope is — a common real failure mode for de novo binders.
-  This is captured as the planarity of the epitope Cα patch.
-- **Terminus scoring** is a *post-hoc* QC score of an existing complex, distinct
-  from design-time terminus losses (e.g.
-  [BindCraft](https://github.com/martinpacesa/BindCraft)).
+  written out as plain regex.
+- **Grippability** (`epitope_planarity` plus the anchor chemistry): how flat and
+  anchorless the epitope is, which is a real de novo failure mode that neither
+  STCRpy nor SurfDiff measures.
+- **Terminus scoring** is a post-hoc QC read on an existing complex, not a
+  design-time loss like the terminus terms in
+  [BindCraft](https://github.com/martinpacesa/BindCraft).
 
-**Not a dependency: SurfDiff.**
 [SurfDiff](https://gitlab.developers.cam.ac.uk/ch/sormanni/surfdiff) (bioRxiv,
-2025) scores epitope *specificity/discriminability* from target surfaces alone,
-before a binder exists — a complementary **pre-design target-selection** step with
-a different input (targets + an off-target panel), not post-hoc complex QC. Use it
-upstream to choose selective epitopes; this tool triages the resulting complexes.
+2025) is a good complement but not a dependency: it scores epitope
+specificity/discriminability from target surfaces before a binder exists (a
+pre-design, target-selection step), whereas this tool triages the complex you
+already have. Use SurfDiff to pick a selective epitope, then this to QC the result.
 
 ## License
 
 MIT
-

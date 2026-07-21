@@ -13,3 +13,4 @@ dist/
 !tests/data/
 !tests/data/*.pdb
 !tests/data/*.cif
+.pytest_cache/

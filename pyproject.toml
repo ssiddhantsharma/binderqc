@@ -25,6 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 modal = ["modal"]
 test = ["pytest"]
+validation = ["matplotlib", "scipy"]  # for tests/pisa_correctness.py (network benchmark)
 
 [project.scripts]
 terminal-accessibility = "terminal_accessibility.cli:main"
