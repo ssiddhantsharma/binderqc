@@ -5,8 +5,8 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
 Quality control and tag-site scoring for designed protein binders, computed
-straight from a predicted binder–target complex. Geometry and sequence only: no
-folding, no GPU, no network. One CSV row per binder chain.
+straight from a predicted binder–target complex. Geometry and sequence only, one
+CSV row per binder chain.
 
 ## Install
 
