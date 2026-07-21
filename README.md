@@ -75,9 +75,10 @@ pytest
 ```
 
 Runs against a bundled example, PDB 7JZU (the LCB1 minibinder on the SARS-CoV-2
-RBD). `tests/pisa_correctness.py` is a separate network benchmark that checks the
-interface area against PISA across 18 public complexes (r ≈ 1.0, ~1% median
-error); run it with `pip install -e ".[validation]" && python tests/pisa_correctness.py`.
+RBD). `tests/pisa_correctness.py` is a separate script (not part of the unit
+tests) that downloads 18 public complexes from RCSB and PDBePISA and checks the
+interface area against PISA (r ≈ 1.0, ~1% median error); run it with
+`pip install -e ".[validation]" && python tests/pisa_correctness.py`.
 
 ## License
 
