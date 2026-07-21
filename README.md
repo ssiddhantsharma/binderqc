@@ -21,31 +21,35 @@ chain assignment looks flipped. Pure geometry — no folding, no GPU, no network
 
 ## Install
 
-Nothing to install if you use [uv](https://docs.astral.sh/uv/):
-
 ```bash
-uv run --python 3.12 --with biotite --with pandas --with numpy \
-    python terminal_accessibility.py --help
+pip install -e .          # or: uv pip install -e .
 ```
 
-Or in an existing env: `pip install "biotite>=1.0" pandas numpy`.
+Python ≥ 3.10. Dependencies (`biotite`, `numpy`, `pandas`) are pulled in
+automatically.
 
 ## Local usage
 
 ```bash
-python terminal_accessibility.py \
+terminal-accessibility \
     --binder-chains B --target-chains A \
     --out tag_metrics.csv \
     path/to/preds/*.cif some_directory/
 ```
 
 Inputs can be files, globs, or directories (recursively scanned for `*.pdb` / `*.cif`).
+Or from Python:
+
+```python
+from terminal_accessibility import score_structure
+rows = score_structure("complex.pdb", binder_chains=["A"], target_chains=["B"])
+```
 
 **Chain convention.** Binder/target chains are given explicitly — no length
 heuristic is reliable across target types. If `--binder-chains` is omitted the
-script auto-guesses the binder (shortest chain in a 20–250-residue window) and
-prints the guess for every file. `--target-chains` defaults to every chain that
-isn't a binder chain.
+binder is auto-guessed (shortest chain in a 20–250-residue window) and the guess
+is printed for every file. `--target-chains` defaults to every chain that isn't a
+binder chain.
 
 | flag | default | meaning |
 |---|---|---|
@@ -58,11 +62,11 @@ isn't a binder chain.
 ## Run on Modal (optional)
 
 For a large directory, fan the work out over parallel CPU containers with
-[Modal](https://modal.com). `modal_app.py` is **self-contained** — it inlines
-the scorer, so it's the only file you need (nothing but `modal` installed
-locally; biotite/numpy load inside the container):
+[Modal](https://modal.com). `modal_app.py` imports the installed package, so
+install it into the same environment as `modal`:
 
 ```bash
+pip install -e ".[modal]"
 modal run modal_app.py --inputs "path/to/preds" --binder-chains B --target-chains A --out tags.csv
 ```
 
@@ -70,9 +74,23 @@ modal run modal_app.py --inputs "path/to/preds" --binder-chains B --target-chain
 files stay on your machine; only their bytes are sent to the container. No GPU,
 no secrets, no volumes.
 
-> The scorer logic is duplicated between `terminal_accessibility.py` (local CLI)
-> and `modal_app.py` (Modal) so each runs on its own. If you change the science,
-> change it in both.
+## Tests
+
+```bash
+pip install -e ".[test]"
+pytest
+```
+
+Tests run against a bundled example: PDB **7JZU** — the de novo designed
+minibinder **LCB1** bound to the SARS-CoV-2 RBD (Cao et al., *Science* 2020).
+
+## Layout
+
+```
+src/terminal_accessibility/   core.py (scorer) · paths.py · cli.py
+modal_app.py                  Modal wrapper (imports the package)
+tests/                        test_scorer.py · data/7JZU_LCB1_RBD.pdb
+```
 
 ## Output
 

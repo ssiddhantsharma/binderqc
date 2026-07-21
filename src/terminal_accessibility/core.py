@@ -1,15 +1,13 @@
-#!/usr/bin/env python
-"""Terminal (N-/C-terminus) accessibility scorer for protein binder complexes.
+"""Terminal (N-/C-terminus) accessibility scoring for protein binder complexes.
 
-Given predicted binder--target complex structures (PDB or CIF), this decides,
-for each binder chain in each structure, which terminus is the better place to
-attach a purification / immobilization / conjugation tag. Pure geometry off the
-structures you already have -- no folding, no GPU, no network.
+Given a predicted binder--target complex (PDB/CIF), decide, for each binder
+chain, which terminus is the better place to attach a purification /
+immobilization / conjugation tag. Pure geometry -- no folding, no GPU, no network.
 
 A tag site should be (1) solvent-exposed so it does not disrupt the fold, and
 (2) FAR from the binding interface so that tethering through it does not occlude
-the paratope when the binder is immobilized on a sensor surface / displayed.
-So three numbers per terminus matter:
+the paratope when the binder is immobilized / displayed. So three numbers per
+terminus matter:
 
   * relative SASA of the terminal residue (exposure; Tien et al. 2013 max-ASA ref)
   * distance from the terminal CA to the nearest binder interface (paratope) CA
@@ -19,51 +17,14 @@ So three numbers per terminus matter:
 
 `recommended_tag` picks the terminus farther from the interface, with a warning
 when that terminus is buried, when the two termini are ~equally placed, or when
-the recommended terminus points back toward the interface.
-
-It also reports the terminal residue's exposure and the SG-SASA of any terminal
-cysteine, so you can judge site-directed Cys conjugatability at a glance.
-
-Chain convention
-----------------
-Binder/target chains are given EXPLICITLY as comma-separated sets. This is
-deliberate -- no length heuristic is reliable across target types (in a pMHC
-complex the peptide is the shortest chain; in other complexes the binder can be
-the larger chain). So:
-
-  * `--binder-chains` / `--target-chains` are authoritative when given.
-  * `--target-chains` defaults to "all chains that are not binder chains".
-  * If `--binder-chains` is omitted the script AUTO-GUESSES and prints the
-    guess for every file (never silent), and additionally warns whenever a
-    declared binder chain is the largest chain in the complex (a strong sign
-    the binder/target assignment is flipped).
-
-Output is one row per (structure, binder_chain).
-
-Usage
------
-    uv run --python 3.12 --with biotite --with pandas --with numpy \
-        python terminal_accessibility.py \
-        --binder-chains B --target-chains A \
-        --out tag_metrics.csv \
-        path/to/preds/*.cif a_directory/
-
-  --binder-chains     comma-separated binder chain ids (default: auto-guess)
-  --target-chains     comma-separated target chains (default: all non-binder chains)
-  --interface-cutoff  heavy-atom dist (A) to call a binder residue "interface" (default 5.0)
-  --exposure-cutoff   relSASA below which a terminus is "buried" (default 0.25)
-  --out               output CSV path (default: terminal_accessibility.csv)
-
-Inputs may be files, globs, or directories (recursively scanned for *.pdb/*.cif).
+the recommended terminus points back toward the interface. The terminal
+residue's exposure and the SG-SASA of any terminal cysteine are also reported,
+for judging site-directed Cys conjugatability.
 """
 
-import argparse
-import glob
 import os
-import sys
 
 import numpy as np
-import pandas as pd
 import biotite.structure as struc
 import biotite.structure.io as strucio
 
@@ -91,15 +52,6 @@ def _load_protein(path):
     return array[struc.filter_amino_acids(array)]
 
 
-def _chain_order(array):
-    """Chain ids in order of first appearance (N->C along the file)."""
-    seen = []
-    for c in array.chain_id:
-        if c not in seen:
-            seen.append(c)
-    return seen
-
-
 def _chain_lengths(array):
     """{chain_id: residue count}, in chain order."""
     starts = struc.get_residue_starts(array)
@@ -122,12 +74,6 @@ def _chain_res_ids(array, chain_id):
     """Ordered res_ids for a chain, following chain order (N->C), not numbering."""
     starts = struc.get_residue_starts(array)
     return [int(array.res_id[s]) for s in starts if array.chain_id[s] == chain_id]
-
-
-def _termini_res_ids(array, chain_id):
-    """(N-term res_id, C-term res_id) following chain order, not numbering."""
-    ids = _chain_res_ids(array, chain_id)
-    return (ids[0], ids[-1]) if ids else (None, None)
 
 
 def _residue_relsasa(array, atom_sasa):
@@ -289,7 +235,34 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     }
 
 
-def score_structure(path, binder_chains, target_chains, interface_cutoff, exposure_cutoff):
+def score_structure(path, binder_chains=None, target_chains=None,
+                    interface_cutoff=5.0, exposure_cutoff=0.25, verbose=True):
+    """Score every binder chain in one structure file.
+
+    Parameters
+    ----------
+    path : str
+        Path to a PDB or CIF file.
+    binder_chains : list[str] | None
+        Binder chain ids. If None/empty, the binder is auto-guessed (shortest
+        chain in the length window) and, when `verbose`, the guess is printed.
+    target_chains : list[str] | None
+        Target chain ids. If None/empty, defaults to every non-binder chain.
+    interface_cutoff : float
+        Heavy-atom distance (A) defining an interface residue.
+    exposure_cutoff : float
+        relSASA below which a terminus is flagged "buried".
+    verbose : bool
+        Print the auto-guess line when the binder is guessed.
+
+    Returns
+    -------
+    list[dict]
+        One row dict per binder chain (or a single ``{"pdb", "error"}`` row).
+    """
+    binder_chains = list(binder_chains) if binder_chains else []
+    target_chains = list(target_chains) if target_chains else []
+
     array = _load_protein(path)
     name = os.path.basename(path)
     chain_lens = _chain_lengths(array)
@@ -304,7 +277,8 @@ def score_structure(path, binder_chains, target_chains, interface_cutoff, exposu
         binders = _guess_binder_chains(chain_lens)
         if not binders:
             return [{"pdb": name, "error": f"could not auto-guess a binder chain among {chain_lens}"}]
-        print(f"[auto] {name}: binder guess = {binders[0]} (chain lengths {chain_lens})")
+        if verbose:
+            print(f"[auto] {name}: binder guess = {binders[0]} (chain lengths {chain_lens})")
 
     # Compute complex SASA once; reuse for both per-residue relSASA and SG-SASA.
     atom_sasa = np.nan_to_num(struc.sasa(array), nan=0.0)
@@ -319,49 +293,3 @@ def score_structure(path, binder_chains, target_chains, interface_cutoff, exposu
             array, atom_sasa, name, bc, targets, chain_lens, relsasa, interface_cutoff, exposure_cutoff
         ))
     return rows
-
-
-def gather_paths(inputs):
-    """Expand files, globs, and directories into a sorted unique list of .pdb/.cif paths."""
-    paths = []
-    for item in inputs:
-        if os.path.isdir(item):
-            for root, _, files in os.walk(item):
-                paths.extend(os.path.join(root, f) for f in files if f.lower().endswith((".pdb", ".cif")))
-        else:
-            paths.extend(glob.glob(item))
-    return sorted(set(paths))
-
-
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("inputs", nargs="+", help="PDB/CIF files, globs, or directories")
-    ap.add_argument("--binder-chains", default="", help="comma-separated; default = auto-guess")
-    ap.add_argument("--target-chains", default="", help="comma-separated; default = all non-binder chains")
-    ap.add_argument("--interface-cutoff", type=float, default=5.0)
-    ap.add_argument("--exposure-cutoff", type=float, default=0.25)
-    ap.add_argument("--out", default="terminal_accessibility.csv")
-    args = ap.parse_args()
-
-    paths = gather_paths(args.inputs)
-    if not paths:
-        sys.exit("No .pdb/.cif files found in inputs.")
-    binder_chains = [c for c in args.binder_chains.split(",") if c]
-    target_chains = [c for c in args.target_chains.split(",") if c]
-
-    rows = []
-    for p in paths:
-        try:
-            rows.extend(score_structure(p, binder_chains, target_chains, args.interface_cutoff, args.exposure_cutoff))
-        except Exception as e:  # noqa: BLE001 - keep batch going, record failure
-            rows.append({"pdb": os.path.basename(p), "error": str(e)})
-
-    df = pd.DataFrame(rows)
-    df.to_csv(args.out, index=False)
-    with pd.option_context("display.max_columns", None, "display.width", 220):
-        print(df.to_string(index=False))
-    print(f"\nWrote {len(df)} rows -> {args.out}")
-
-
-if __name__ == "__main__":
-    main()

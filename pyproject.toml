@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "terminal-accessibility"
+version = "0.1.0"
+description = "Score binder termini for tag/conjugation suitability from predicted complexes"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Siddhant Sharma" }]
+keywords = ["protein-design", "binder", "conjugation", "sasa", "structural-biology"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "biotite>=1.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+modal = ["modal"]
+test = ["pytest"]
+
+[project.scripts]
+terminal-accessibility = "terminal_accessibility.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ssiddhantsharma/terminal-accessibility"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/terminal_accessibility"]

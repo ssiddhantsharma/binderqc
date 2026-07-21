@@ -5,3 +5,11 @@ __pycache__/
 *.cif
 .venv/
 .DS_Store
+build/
+dist/
+*.egg-info/
+
+# keep bundled test fixtures despite the *.pdb / *.cif rules above
+!tests/data/
+!tests/data/*.pdb
+!tests/data/*.cif
