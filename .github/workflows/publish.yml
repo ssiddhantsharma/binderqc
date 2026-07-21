@@ -8,6 +8,7 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  workflow_dispatch:      # allow manual runs (and re-runs) from the Actions tab
 
 jobs:
   publish:
