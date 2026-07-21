@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use binderqc, please cite it as below."
+title: binderqc
+abstract: >-
+  Quality control and tag-site scoring for designed protein binders,
+  computed from a predicted binder-target complex.
+type: software
+authors:
+  - given-names: Siddhant
+    family-names: Sharma
+version: 0.1.0
+date-released: "2026-07-21"
+license: MIT
+repository-code: "https://github.com/ssiddhantsharma/binderqc"
+url: "https://github.com/ssiddhantsharma/binderqc"
+keywords:
+  - protein-design
+  - bioinformatics
+  - structural-biology
+  - protein-engineering
+  - binder-design

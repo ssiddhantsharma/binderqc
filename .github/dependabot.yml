@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # keep the GitHub Actions (checkout, setup-python, pypi-publish) current
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+  # keep the Python dependencies in pyproject.toml current
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
