@@ -17,12 +17,13 @@ FIXTURE = Path(__file__).parent / "data" / "7JZU_LCB1_RBD.pdb"
 
 EXPECTED_COLUMNS = {
     "pdb", "binder_chain", "target_chains", "binder_len", "n_interface_res", "binder_bsa",
-    "approach_angle", "epitope_planarity",
+    "approach_angle", "epitope_planarity", "epitope_hydrophobic_frac", "epitope_aromatic_n",
     "nterm_resnum", "nterm_resname", "nterm_relsasa", "nterm_dist_to_interface",
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
-    "recommended_tag", "gravy", "net_charge_ph74", "pi", "sequence_liabilities", "warnings",
+    "recommended_tag", "mw", "gravy", "net_charge_ph74", "pi", "ext_coeff_280",
+    "aromaticity", "aliphatic_index", "sequence_liabilities", "warnings",
 }
 
 
@@ -100,6 +101,24 @@ def test_charge_and_pi_logic():
     assert _isoelectric_point("E" * 10) < 5.0
     assert _net_charge("K" * 10) > 0
     assert _net_charge("E" * 10) < 0
+
+
+def test_protparam_formulas():
+    # Check the formulas self-consistently + a physical MW range (no memorized
+    # external numbers, which are the classic fabrication trap).
+    from terminal_accessibility.core import _protparam
+    seq = "FVNQHLCGSHLVEALYLVCGERGFFYTPKT"   # 30-mer
+    pp = _protparam(seq)
+    assert 30 * 100 < pp["mw"] < 30 * 140                       # ~110 Da/residue
+    assert pp["ext_coeff_280"] == 5500 * seq.count("W") + 1490 * seq.count("Y")
+    assert abs(pp["aromaticity"]
+               - sum(seq.count(a) for a in "FWY") / len(seq)) < 1e-9
+    assert pp["aliphatic_index"] >= 0.0
+
+
+def test_epitope_composition_reported(row):
+    assert 0.0 <= row["epitope_hydrophobic_frac"] <= 1.0
+    assert row["epitope_aromatic_n"] >= 0
 
 
 def test_auto_guess_picks_the_small_chain():

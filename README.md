@@ -27,11 +27,15 @@ It also reports, per binder chain, a few whole-complex QC signals:
   paratope→epitope binding axis: ~0 = end-on, ~90 = lying across the surface;
 - **`epitope_planarity`** (Å) — RMSD of the epitope Cα patch to its best-fit
   plane: small = flat/low-grippability (flagged under 1 Å), larger = concave;
+- **`epitope_hydrophobic_frac`, `epitope_aromatic_n`** — chemical grippability:
+  fraction of hydrophobic epitope residues and count of aromatic anchors (F/W/Y)
+  a binder can engage. A polar, anchorless epitope is flagged;
 - **`sequence_liabilities`** — sequence motifs to inspect (odd-Cys, N-glyc
   sequon, deamidation, polybasic, hydrophobic run);
-- **`gravy`, `net_charge_ph74`, `pi`** — expression/solubility hints from the
-  binder sequence (Kyte–Doolittle hydropathy; charge at pH 7.4 and approximate pI
-  by Henderson–Hasselbalch). GRAVY > 0.4 is flagged as an aggregation risk.
+- **expression/solubility** (from the binder sequence, no BioPython): `gravy`
+  (Kyte–Doolittle; > 0.4 flagged), `net_charge_ph74` and approximate `pi`
+  (Henderson–Hasselbalch), and pressing ProtParam-style properties `mw`,
+  `ext_coeff_280` (Pace 1995), `aromaticity`, `aliphatic_index`.
 
 ## Install
 
@@ -111,10 +115,11 @@ tests/                        test_scorer.py · data/7JZU_LCB1_RBD.pdb
 One row per `(structure, binder_chain)`:
 
 `pdb, binder_chain, target_chains, binder_len, n_interface_res, binder_bsa,`
-`approach_angle, epitope_planarity,`
+`approach_angle, epitope_planarity, epitope_hydrophobic_frac, epitope_aromatic_n,`
 `nterm_resnum, nterm_resname, nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,`
 `cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface, cterm_orientation, cterm_sg_sasa,`
-`recommended_tag ("N" | "C" | "N/A"), gravy, net_charge_ph74, pi, sequence_liabilities, warnings`
+`recommended_tag ("N" | "C" | "N/A"), mw, gravy, net_charge_ph74, pi, ext_coeff_280,`
+`aromaticity, aliphatic_index, sequence_liabilities, warnings`
 
 ## Related work & design notes
 

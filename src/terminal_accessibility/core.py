@@ -233,6 +233,55 @@ def _gravy(seq):
     return float(np.mean(vals)) if vals else float("nan")
 
 
+# Average residue masses (Da) for MW; standard Expasy values.
+_RES_MASS = {
+    "A": 71.0788, "R": 156.1875, "N": 114.1038, "D": 115.0886, "C": 103.1388,
+    "E": 129.1155, "Q": 128.1307, "G": 57.0519, "H": 137.1411, "I": 113.1594,
+    "L": 113.1594, "K": 128.1741, "M": 131.1926, "F": 147.1766, "P": 97.1167,
+    "S": 87.0782, "T": 101.1051, "W": 186.2132, "Y": 163.1760, "V": 99.1326,
+}
+_WATER = 18.01528
+_HYDROPHOBIC = set("AILMFWV")
+_AROMATIC = set("FWY")
+
+
+def _protparam(seq):
+    """A few pressing ProtParam-style sequence properties (exact, no deps):
+    molecular weight, reduced extinction coefficient at 280 nm (Pace 1995),
+    aromaticity (Lobry), and aliphatic index (Ikai 1980).
+    """
+    n = len(seq)
+    if n == 0:
+        return {"mw": float("nan"), "ext_coeff_280": float("nan"),
+                "aromaticity": float("nan"), "aliphatic_index": float("nan")}
+    mw = sum(_RES_MASS.get(a, 0.0) for a in seq) + _WATER
+    ext = 5500 * seq.count("W") + 1490 * seq.count("Y")           # reduced Cys
+    aromaticity = sum(seq.count(a) for a in _AROMATIC) / n
+    # Aliphatic index: mole-% weighted volume of A, V, I+L.
+    mp = {a: 100.0 * seq.count(a) / n for a in "AVIL"}
+    ali = mp["A"] + 2.9 * mp["V"] + 3.9 * (mp["I"] + mp["L"])
+    return {"mw": mw, "ext_coeff_280": float(ext),
+            "aromaticity": aromaticity, "aliphatic_index": ali}
+
+
+def _epitope_composition(array, target_iface):
+    """(hydrophobic fraction, aromatic count) of the epitope residues -- the
+    chemical 'grippability'/anchor content a binder engages. Composition-based
+    (residue identity), complementary to epitope_planarity (shape)."""
+    if not target_iface:
+        return float("nan"), 0
+    types = []
+    for ch, rid in target_iface:
+        m = (array.chain_id == ch) & (array.res_id == rid)
+        if m.any():
+            types.append(_THREE_TO_ONE.get(str(array.res_name[m][0]), "X"))
+    if not types:
+        return float("nan"), 0
+    hyd = sum(1 for t in types if t in _HYDROPHOBIC) / len(types)
+    arom = sum(1 for t in types if t in _AROMATIC)
+    return float(hyd), int(arom)
+
+
 def _charge_at_ph(seq, ph):
     """Net charge of the sequence at a given pH (Henderson-Hasselbalch)."""
     pos = 1.0 / (1.0 + 10 ** (ph - _PKA_NTERM))
@@ -355,16 +404,23 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     approach = _approach_angle(binder_ca, paratope, epitope_centroid)
     planarity = _planarity_rmsd(epitope_ca)
 
-    # Sequence-level developability signals (Adaptyv protein-qc motifs/expression).
+    # Epitope anchor chemistry (grippability, complementary to planarity/shape).
+    epi_hyd_frac, epi_aromatic_n = _epitope_composition(array, target_iface)
+
+    # Sequence-level developability signals (Adaptyv protein-qc motifs/expression
+    # + pressing ProtParam properties).
     binder_seq = _binder_sequence(array, binder_chain)
     liabilities = _sequence_liabilities(binder_seq)
     gravy = _gravy(binder_seq)
     net_charge = _net_charge(binder_seq)
     pi = _isoelectric_point(binder_seq)
+    pp = _protparam(binder_seq)
 
     warnings = []
     if np.isfinite(planarity) and planarity < 1.0:
         warnings.append(f"flat epitope (planarity RMSD={planarity:.2f} A): low grippability")
+    if np.isfinite(epi_hyd_frac) and epi_hyd_frac < 0.2 and epi_aromatic_n == 0:
+        warnings.append("polar epitope (few hydrophobic/aromatic anchors): hard to grip")
     if np.isfinite(gravy) and gravy > 0.4:
         warnings.append(f"hydrophobic (GRAVY={gravy:.2f}): solubility/aggregation risk")
     if chain_lens.get(binder_chain) == max(chain_lens.values()):
@@ -398,6 +454,8 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "binder_bsa": round(binder_bsa, 1) if np.isfinite(binder_bsa) else float("nan"),
         "approach_angle": round(approach, 1) if np.isfinite(approach) else float("nan"),
         "epitope_planarity": round(planarity, 2) if np.isfinite(planarity) else float("nan"),
+        "epitope_hydrophobic_frac": round(epi_hyd_frac, 2) if np.isfinite(epi_hyd_frac) else float("nan"),
+        "epitope_aromatic_n": epi_aromatic_n,
         "nterm_resnum": nterm_id,
         "nterm_resname": _resname(nterm_id),
         "nterm_relsasa": round(n_rel, 3) if np.isfinite(n_rel) else float("nan"),
@@ -411,9 +469,13 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "cterm_orientation": round(c_orient, 2) if np.isfinite(c_orient) else float("nan"),
         "cterm_sg_sasa": round(c_sg, 2) if np.isfinite(c_sg) else float("nan"),
         "recommended_tag": recommended,
+        "mw": round(pp["mw"], 1) if np.isfinite(pp["mw"]) else float("nan"),
         "gravy": round(gravy, 3) if np.isfinite(gravy) else float("nan"),
         "net_charge_ph74": round(net_charge, 2) if np.isfinite(net_charge) else float("nan"),
         "pi": round(pi, 2) if np.isfinite(pi) else float("nan"),
+        "ext_coeff_280": pp["ext_coeff_280"],
+        "aromaticity": round(pp["aromaticity"], 3) if np.isfinite(pp["aromaticity"]) else float("nan"),
+        "aliphatic_index": round(pp["aliphatic_index"], 1) if np.isfinite(pp["aliphatic_index"]) else float("nan"),
         "sequence_liabilities": "; ".join(liabilities),
         "warnings": "; ".join(warnings),
     }
