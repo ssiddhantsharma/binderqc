@@ -48,6 +48,15 @@ guess the binder as the shortest chain (20–250 aa, printed for each file);
 | `--out` | `binderqc.csv` | output CSV path |
 | `--fasta` | off | also write the QC-passing binders to this FASTA |
 
+Example output for the bundled LCB1 minibinder (a few of the columns):
+
+| recommended_tag | binder_bsa | epitope_planarity | epitope_aromatic_n | pi | qc_pass |
+|---|---|---|---|---|---|
+| C | 1021.4 | 3.21 | 11 | 4.17 | True |
+
+Its `warnings` field reads *both termini ~equidistant from interface (ambiguous)* —
+a tag-site advisory, so `qc_pass` stays `True`.
+
 ## What it reports
 
 Per binder chain:
