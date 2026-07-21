@@ -23,10 +23,18 @@ for judging site-directed Cys conjugatability.
 """
 
 import os
+import re
 
 import numpy as np
 import biotite.structure as struc
 import biotite.structure.io as strucio
+
+_THREE_TO_ONE = {
+    "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
+    "GLU": "E", "GLN": "Q", "GLY": "G", "HIS": "H", "ILE": "I",
+    "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P",
+    "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
+}
 
 # Tien et al. 2013, "theoretical" maximum accessible surface area (A^2) per
 # residue. Used to normalize total-residue SASA into a 0-1 relative exposure.
@@ -175,6 +183,92 @@ def _min_dist_to_interface(array, binder_chain, term_res_id, interface_ids):
     return float(np.linalg.norm(iface_cas - term_ca, axis=1).min())
 
 
+def _binder_sequence(array, chain_id):
+    """One-letter sequence of a chain, in chain order. Non-standard residues -> 'X'."""
+    starts = struc.get_residue_starts(array)
+    return "".join(
+        _THREE_TO_ONE.get(str(array.res_name[s]), "X")
+        for s in starts if array.chain_id[s] == chain_id
+    )
+
+
+def _sequence_liabilities(seq):
+    """Sequence-level developability liabilities (regex, no deps).
+
+    Motifs/thresholds follow Adaptyv Bio's open `protein-qc` skill (MIT):
+    odd cysteine count, N-glycosylation sequon, deamidation, polybasic run,
+    hydrophobic run. These are flags to inspect, not hard failures.
+    """
+    flags = []
+    n_cys = seq.count("C")
+    if n_cys % 2 == 1:
+        flags.append(f"odd Cys count ({n_cys}): possible unpaired thiol")
+    if re.search(r"N[^P][ST]", seq):
+        flags.append("N-glycosylation sequon (NxS/T)")
+    if re.search(r"N[GST]", seq):
+        flags.append("deamidation/isomerization motif (NG/NS/NT)")
+    if re.search(r"[KR]{3,}", seq):
+        flags.append("polybasic run (>=3 K/R): proteolysis")
+    if re.search(r"[AILMFWV]{6,}", seq):
+        flags.append("hydrophobic run (>=6): aggregation")
+    return flags
+
+
+def _principal_axis(coords):
+    """Unit vector along the direction of greatest variance (long axis)."""
+    centered = coords - coords.mean(axis=0)
+    _, _, vh = np.linalg.svd(centered, full_matrices=False)
+    return vh[0]
+
+
+def _target_interface_res(array, binder_chain, target_chains, cutoff):
+    """(chain, res_id) of target residues with a heavy atom within cutoff of the binder."""
+    binder_mask = array.chain_id == binder_chain
+    target_mask = np.isin(array.chain_id, list(target_chains))
+    if not binder_mask.any() or not target_mask.any():
+        return []
+    b_coord = array.coord[binder_mask]
+    t_coord, t_chain, t_resid = array.coord[target_mask], array.chain_id[target_mask], array.res_id[target_mask]
+    hits = set()
+    for i in range(0, len(t_coord), 2048):
+        chunk = t_coord[i : i + 2048]
+        d = np.linalg.norm(chunk[:, None, :] - b_coord[None, :, :], axis=-1)
+        hit = d.min(axis=1) <= cutoff
+        for ch, rr, h in zip(t_chain[i : i + 2048], t_resid[i : i + 2048], hit):
+            if h:
+                hits.add((str(ch), int(rr)))
+    return sorted(hits)
+
+
+def _approach_angle(binder_ca, paratope_centroid, epitope_centroid):
+    """Angle (deg, 0-90) between the binder's long axis and the paratope->epitope
+    binding axis. ~0 = end-on (binder points into the target); ~90 = side-on
+    (binder lies across the surface). A reference-free, binder-agnostic analog of
+    STCRpy's docking angle (which needs a target-class canonical frame). NaN if
+    geometry unavailable.
+    """
+    if len(binder_ca) < 2 or paratope_centroid is None or epitope_centroid is None:
+        return float("nan")
+    axis = _principal_axis(binder_ca)
+    binding = epitope_centroid - paratope_centroid
+    n_bind = np.linalg.norm(binding)
+    if n_bind == 0:
+        return float("nan")
+    cos = abs(float(np.dot(axis, binding / n_bind)))  # axis is undirected
+    return float(np.degrees(np.arccos(min(cos, 1.0))))
+
+
+def _planarity_rmsd(coords):
+    """RMSD (A) of points to their best-fit plane. Small = flat epitope patch
+    (low grippability); larger = concave/knobby. NaN with < 3 points."""
+    if len(coords) < 3:
+        return float("nan")
+    centered = coords - coords.mean(axis=0)
+    _, _, vh = np.linalg.svd(centered, full_matrices=False)
+    normal = vh[-1]  # least-variance direction
+    return float(np.sqrt(np.mean((centered @ normal) ** 2)))
+
+
 def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, chain_lens,
                         relsasa, interface_cutoff, exposure_cutoff):
     ordered_ids = _chain_res_ids(array, binder_chain)
@@ -205,7 +299,20 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     n_sg = _sg_sasa(array, atom_sasa, binder_chain, nterm_id) if _resname(nterm_id) == "CYS" else float("nan")
     c_sg = _sg_sasa(array, atom_sasa, binder_chain, cterm_id) if _resname(cterm_id) == "CYS" else float("nan")
 
+    # Pose (approach angle) + grippability (epitope planarity), both reference-free.
+    binder_ca = array.coord[(array.chain_id == binder_chain) & (array.atom_name == "CA")]
+    target_iface = _target_interface_res(array, binder_chain, target_chains, interface_cutoff)
+    epitope_ca = np.array([c for c in (_ca_coord(array, ch, r) for ch, r in target_iface) if c is not None])
+    epitope_centroid = epitope_ca.mean(axis=0) if len(epitope_ca) else None
+    approach = _approach_angle(binder_ca, paratope, epitope_centroid)
+    planarity = _planarity_rmsd(epitope_ca)
+
+    # Sequence-level developability liabilities (Adaptyv protein-qc motifs).
+    liabilities = _sequence_liabilities(_binder_sequence(array, binder_chain))
+
     warnings = []
+    if np.isfinite(planarity) and planarity < 1.0:
+        warnings.append(f"flat epitope (planarity RMSD={planarity:.2f} A): low grippability")
     if chain_lens.get(binder_chain) == max(chain_lens.values()):
         warnings.append("binder is the LARGEST chain -- binder/target may be flipped")
     if np.isfinite(binder_bsa) and binder_bsa < 300.0:
@@ -235,6 +342,8 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "binder_len": chain_lens.get(binder_chain, 0),
         "n_interface_res": len(interface_ids),
         "binder_bsa": round(binder_bsa, 1) if np.isfinite(binder_bsa) else float("nan"),
+        "approach_angle": round(approach, 1) if np.isfinite(approach) else float("nan"),
+        "epitope_planarity": round(planarity, 2) if np.isfinite(planarity) else float("nan"),
         "nterm_resnum": nterm_id,
         "nterm_resname": _resname(nterm_id),
         "nterm_relsasa": round(n_rel, 3) if np.isfinite(n_rel) else float("nan"),
@@ -248,6 +357,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "cterm_orientation": round(c_orient, 2) if np.isfinite(c_orient) else float("nan"),
         "cterm_sg_sasa": round(c_sg, 2) if np.isfinite(c_sg) else float("nan"),
         "recommended_tag": recommended,
+        "sequence_liabilities": "; ".join(liabilities),
         "warnings": "; ".join(warnings),
     }
 

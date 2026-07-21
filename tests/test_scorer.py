@@ -17,11 +17,12 @@ FIXTURE = Path(__file__).parent / "data" / "7JZU_LCB1_RBD.pdb"
 
 EXPECTED_COLUMNS = {
     "pdb", "binder_chain", "target_chains", "binder_len", "n_interface_res", "binder_bsa",
+    "approach_angle", "epitope_planarity",
     "nterm_resnum", "nterm_resname", "nterm_relsasa", "nterm_dist_to_interface",
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
-    "recommended_tag", "warnings",
+    "recommended_tag", "sequence_liabilities", "warnings",
 }
 
 
@@ -75,6 +76,16 @@ def test_metrics_are_in_range(row):
         assert 0.0 <= row[key] <= 1.5           # relSASA, occasionally slightly >1
     for key in ("nterm_orientation", "cterm_orientation"):
         assert -1.0 <= row[key] <= 1.0          # a cosine
+
+
+def test_pose_and_grippability(row):
+    assert 0.0 <= row["approach_angle"] <= 90.0     # undirected axis angle
+    assert row["epitope_planarity"] >= 0.0          # RMSD to best-fit plane
+
+
+def test_sequence_liabilities_is_a_string(row):
+    # May be empty; must never be missing.
+    assert isinstance(row["sequence_liabilities"], str)
 
 
 def test_auto_guess_picks_the_small_chain():

@@ -19,9 +19,16 @@ that terminus is buried, when the two termini are roughly equidistant, when the
 recommended terminus points back toward the interface, or when the binder/target
 chain assignment looks flipped. Pure geometry — no folding, no GPU, no network.
 
-It also reports the binder's **buried surface area** (`binder_bsa`, Å²) as an
-interface-size sanity check — a tiny interface is the strongest single sign of a
-spurious binder — and flags interfaces under 300 Å².
+It also reports, per binder chain, a few whole-complex QC signals:
+
+- **`binder_bsa`** (Å²) — buried surface area; a tiny interface is the strongest
+  single sign of a spurious binder (flagged under 300 Å²);
+- **`approach_angle`** (°, 0–90) — angle between the binder's long axis and the
+  paratope→epitope binding axis: ~0 = end-on, ~90 = lying across the surface;
+- **`epitope_planarity`** (Å) — RMSD of the epitope Cα patch to its best-fit
+  plane: small = flat/low-grippability (flagged under 1 Å), larger = concave;
+- **`sequence_liabilities`** — sequence motifs to inspect (odd-Cys, N-glyc
+  sequon, deamidation, polybasic, hydrophobic run).
 
 ## Install
 
@@ -101,22 +108,39 @@ tests/                        test_scorer.py · data/7JZU_LCB1_RBD.pdb
 One row per `(structure, binder_chain)`:
 
 `pdb, binder_chain, target_chains, binder_len, n_interface_res, binder_bsa,`
+`approach_angle, epitope_planarity,`
 `nterm_resnum, nterm_resname, nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,`
 `cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface, cterm_orientation, cterm_sg_sasa,`
-`recommended_tag ("N" | "C" | "N/A"), warnings`
+`recommended_tag ("N" | "C" | "N/A"), sequence_liabilities, warnings`
 
 ## Related work & design notes
 
-The interface-size metric (buried surface area) is a deliberately lightweight,
-**PLIP-free** reimplementation of the interface-profiling idea from
-[STCRpy](https://doi.org/10.1093/bioinformatics/btaf566) (Bioinformatics, 2025),
-which computes richer per-contact interactions but is TCR-specific and depends on
-[PLIP](https://github.com/pharmai/plip) (GPL-2.0). This tool keeps to buried-area
-geometry computed with biotite so it stays MIT-licensed and dependency-light, and
-works for any binder rather than only TCRs. The terminus / tag-site scoring is
-distinct from design-time terminus losses (e.g.
-[BindCraft](https://github.com/martinpacesa/BindCraft)) in that it is a post-hoc
-QC score of an existing predicted complex, not an optimization objective.
+Signals here are deliberately lightweight reimplementations of ideas from
+existing tools, kept dependency-light (biotite/numpy only) and MIT-clean —
+concepts, not code or dependencies:
+
+- **Interface size + pose.** [STCRpy](https://doi.org/10.1093/bioinformatics/btaf566)
+  (Bioinformatics, 2025) profiles interface contacts and computes a TCR *docking
+  angle* — but its contacts come from [PLIP](https://github.com/pharmai/plip)
+  (GPL-2.0), and its angle is measured in a canonical MHC-groove reference frame
+  (TCR/MHC-only). Here, buried surface area and a **reference-free `approach_angle`**
+  give a binder-agnostic analog for *any* target, with no PLIP dependency.
+- **Sequence liabilities.** Motifs/thresholds follow Adaptyv Bio's open
+  [`protein-qc` skill](https://github.com/adaptyvbio/protein-design-skills) (MIT),
+  reimplemented as plain regex.
+- **Grippability (`epitope_planarity`).** Neither STCRpy nor SurfDiff measures how
+  flat/anchorless the epitope is — a common real failure mode for de novo binders.
+  This is captured as the planarity of the epitope Cα patch.
+- **Terminus scoring** is a *post-hoc* QC score of an existing complex, distinct
+  from design-time terminus losses (e.g.
+  [BindCraft](https://github.com/martinpacesa/BindCraft)).
+
+**Not a dependency: SurfDiff.**
+[SurfDiff](https://gitlab.developers.cam.ac.uk/ch/sormanni/surfdiff) (bioRxiv,
+2025) scores epitope *specificity/discriminability* from target surfaces alone,
+before a binder exists — a complementary **pre-design target-selection** step with
+a different input (targets + an off-target panel), not post-hoc complex QC. Use it
+upstream to choose selective epitopes; this tool triages the resulting complexes.
 
 ## License
 
