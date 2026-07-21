@@ -1,14 +1,13 @@
-"""Run the terminal-accessibility scorer on Modal.
+"""Run the scorer on Modal, for when you have a big directory of predictions.
 
-Imports the installed `terminal_accessibility` package (no inlined copy -- the
-science lives in one place). Structure files stay local; each file's bytes are
-shipped to a lightweight CPU container that runs the scorer and returns rows.
-Useful for fanning a big directory of predictions out in parallel. No GPU, no
-secrets, no volumes.
+It imports the installed terminal_accessibility package (rather than carrying its
+own copy of the scorer), keeps the structures on your machine, and ships each
+file's bytes to a small CPU container that runs the scorer and hands back rows.
+No GPU, no secrets, no volumes - you only need this to run things in parallel.
 
-Setup (once):   pip install -e .
-Run:            modal run modal_app.py --inputs "path/to/preds" --binder-chains B --target-chains A
-                modal run modal_app.py --inputs "a.pdb,b.cif,globs/*.cif" --out tags.csv
+Setup once:  pip install -e .
+    modal run modal_app.py --inputs "path/to/preds" --binder-chains B --target-chains A
+    modal run modal_app.py --inputs "a.pdb,b.cif,globs/*.cif" --out tags.csv
 """
 
 import csv

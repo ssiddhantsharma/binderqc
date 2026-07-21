@@ -1,5 +1,5 @@
-"""Input-path expansion. Stdlib only -- no scientific deps, so it can be
-imported to gather work without pulling in numpy/biotite."""
+"""Expanding input paths. Stdlib only, so importing this to collect the work
+doesn't drag in numpy/biotite."""
 
 import glob
 import os

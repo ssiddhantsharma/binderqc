@@ -1,25 +1,23 @@
-"""Terminal (N-/C-terminus) accessibility scoring for protein binder complexes.
+"""Where to put a tag on a designed binder, plus a few QC numbers, read straight
+off a predicted binder-target complex.
 
-Given a predicted binder--target complex (PDB/CIF), decide, for each binder
-chain, which terminus is the better place to attach a purification /
-immobilization / conjugation tag. Pure geometry -- no folding, no GPU, no network.
+For each binder chain we work out which terminus (N or C) is the safer place to
+hang a purification/immobilization/conjugation tag. A good tag site is exposed
+(so the tag doesn't wreck the fold) and sits well away from the binding interface
+(so tethering there doesn't block the paratope once the binder is on a chip or
+displayed). So three numbers per terminus:
 
-A tag site should be (1) solvent-exposed so it does not disrupt the fold, and
-(2) FAR from the binding interface so that tethering through it does not occlude
-the paratope when the binder is immobilized / displayed. So three numbers per
-terminus matter:
+  - relative SASA of the terminal residue (how exposed it is; Tien 2013 max-ASA)
+  - distance from the terminal CA to the nearest paratope CA
+  - orientation: does the chain point back toward the paratope (>0) or away (<0)
 
-  * relative SASA of the terminal residue (exposure; Tien et al. 2013 max-ASA ref)
-  * distance from the terminal CA to the nearest binder interface (paratope) CA
-  * orientation: does the chain extend TOWARD the paratope (a tag would head at
-    the target, >0) or AWAY from it (<0)? -- cosine of the terminus's outward
-    chain-extension direction against the direction to the paratope centroid.
+recommended_tag is just the terminus farther from the interface, and we raise a
+warning if that terminus turns out to be buried, roughly tied with the other, or
+pointing back at the target. We also report the SG SASA of a terminal cysteine so
+you can eyeball whether it's a usable conjugation handle.
 
-`recommended_tag` picks the terminus farther from the interface, with a warning
-when that terminus is buried, when the two termini are ~equally placed, or when
-the recommended terminus points back toward the interface. The terminal
-residue's exposure and the SG-SASA of any terminal cysteine are also reported,
-for judging site-directed Cys conjugatability.
+Everything here is geometry/sequence off a single structure - no folding, no GPU,
+no network.
 """
 
 import os
@@ -36,8 +34,8 @@ _THREE_TO_ONE = {
     "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
 }
 
-# Tien et al. 2013, "theoretical" maximum accessible surface area (A^2) per
-# residue. Used to normalize total-residue SASA into a 0-1 relative exposure.
+# Tien et al. 2013 theoretical max ASA per residue, used to turn a residue's
+# total SASA into a 0-1 exposure.
 _REF_MAX_ASA = {
     "ALA": 129.0, "ARG": 274.0, "ASN": 195.0, "ASP": 193.0, "CYS": 167.0,
     "GLU": 223.0, "GLN": 225.0, "GLY": 104.0, "HIS": 224.0, "ILE": 197.0,
@@ -45,15 +43,15 @@ _REF_MAX_ASA = {
     "SER": 155.0, "THR": 172.0, "TRP": 285.0, "TYR": 263.0, "VAL": 174.0,
 }
 
-# Auto-guess: a binder chain is a single chain in this residue-length window.
-# Excludes short peptides below and large targets above. Heuristic only --
-# the printed guess + "largest chain" warning are the real safety net.
+# When the binder chain isn't given we guess it as the shortest chain in this
+# residue window. It's only a fallback - the printed guess and the "largest
+# chain" warning are what actually keep you honest.
 _AUTO_MIN_LEN = 20
 _AUTO_MAX_LEN = 250
 
 
 def _load_protein(path):
-    """Load a structure file, keep amino acids of the first model only."""
+    """Load a structure, first model only, amino acids only."""
     array = strucio.load_structure(path)
     if isinstance(array, struc.AtomArrayStack):
         array = array[0]
@@ -61,7 +59,6 @@ def _load_protein(path):
 
 
 def _chain_lengths(array):
-    """{chain_id: residue count}, in chain order."""
     starts = struc.get_residue_starts(array)
     lengths = {}
     for s in starts:
@@ -71,7 +68,6 @@ def _chain_lengths(array):
 
 
 def _guess_binder_chains(chain_lens):
-    """Best single-chain binder guess: shortest chain within the length window."""
     candidates = {c: n for c, n in chain_lens.items() if _AUTO_MIN_LEN <= n <= _AUTO_MAX_LEN}
     if not candidates:
         return []
@@ -79,17 +75,14 @@ def _guess_binder_chains(chain_lens):
 
 
 def _chain_res_ids(array, chain_id):
-    """Ordered res_ids for a chain, following chain order (N->C), not numbering."""
+    """res_ids in chain order (N to C), not by numbering."""
     starts = struc.get_residue_starts(array)
     return [int(array.res_id[s]) for s in starts if array.chain_id[s] == chain_id]
 
 
 def _residue_relsasa(array, atom_sasa):
-    """Per-atom -> per-residue total SASA, normalized by Tien max-ASA.
-
-    Returns {(chain_id, res_id): relative SASA}. SASA is computed on the whole
-    complex so interface burial is reflected.
-    """
+    """{(chain, res_id): relative SASA}. SASA is over the whole complex, so a
+    residue buried at the interface reads as buried."""
     res_sasa = struc.apply_residue_wise(array, atom_sasa, np.sum)
     res_starts = struc.get_residue_starts(array)
     rel = {}
@@ -102,16 +95,15 @@ def _residue_relsasa(array, atom_sasa):
 
 
 def _sg_sasa(array, atom_sasa, chain_id, res_id):
-    """Absolute SASA (A^2) of a cysteine SG atom, for conjugatability. NaN if none."""
+    """SASA of a Cys SG atom (conjugatability). NaN if there's no SG here."""
     mask = (array.chain_id == chain_id) & (array.res_id == res_id) & (array.atom_name == "SG")
     return float(atom_sasa[mask][0]) if mask.any() else float("nan")
 
 
 def _binder_bsa(array, atom_sasa, binder_chain):
-    """Buried surface area (A^2) of the binder upon binding: SASA of the binder
-    alone minus its SASA in the complex. A small interface is the strongest
-    single sign of a spurious binder. PLIP-free -- pure biotite SASA.
-    """
+    """Area the binder buries on binding = its SASA alone minus its SASA in the
+    complex. A tiny interface is the clearest tell of a junk binder. No PLIP,
+    just biotite SASA."""
     mask = array.chain_id == binder_chain
     if not mask.any():
         return float("nan")
@@ -126,7 +118,7 @@ def _ca_coord(array, chain_id, res_id):
 
 
 def _interface_residue_ids(array, binder_chain, target_chains, cutoff):
-    """Binder res_ids with any heavy atom within `cutoff` A of any target atom."""
+    """Binder residues with any heavy atom within cutoff of the target."""
     binder_mask = array.chain_id == binder_chain
     target_mask = np.isin(array.chain_id, list(target_chains))
     if not binder_mask.any() or not target_mask.any():
@@ -134,7 +126,7 @@ def _interface_residue_ids(array, binder_chain, target_chains, cutoff):
     b_coord, t_coord = array.coord[binder_mask], array.coord[target_mask]
     b_resid = array.res_id[binder_mask]
     interface = set()
-    # Chunk over binder atoms to bound memory on large targets.
+    # chunk the binder atoms so the pairwise distance matrix stays small on big targets
     for i in range(0, len(b_coord), 2048):
         chunk = b_coord[i : i + 2048]
         d = np.linalg.norm(chunk[:, None, :] - t_coord[None, :, :], axis=-1)
@@ -144,22 +136,15 @@ def _interface_residue_ids(array, binder_chain, target_chains, cutoff):
 
 
 def _paratope_centroid(array, binder_chain, interface_ids):
-    """Mean CA of the binder interface (paratope) residues. None if unavailable."""
     cas = [c for c in (_ca_coord(array, binder_chain, r) for r in interface_ids) if c is not None]
     return np.mean(cas, axis=0) if cas else None
 
 
 def _terminus_orientation(term_ca, adj_ca, paratope_centroid):
-    """Cosine of the angle between the terminus's outward chain-extension direction
-    and the direction from the terminus toward the paratope centroid.
-
-    A tag continues the chain outward, along (term_ca - adjacent_ca). If that
-    direction points toward the paratope the appendage heads at the target.
-
-      > 0  terminus extends TOWARD the interface (bad, even if far)
-      < 0  terminus extends AWAY from the interface (good)
-      NaN  geometry unavailable (single-residue chain, missing CA, no interface)
-    """
+    """Cosine between the way the chain extends past the terminus and the
+    direction to the paratope. A tag grows outward along (term_ca - adj_ca); if
+    that points at the paratope (>0) the tag heads straight for the target.
+    Positive is bad even when the terminus is far away; NaN if we can't tell."""
     if term_ca is None or adj_ca is None or paratope_centroid is None:
         return float("nan")
     ext = term_ca - adj_ca
@@ -171,7 +156,6 @@ def _terminus_orientation(term_ca, adj_ca, paratope_centroid):
 
 
 def _min_dist_to_interface(array, binder_chain, term_res_id, interface_ids):
-    """Min CA-CA distance from terminal residue to any interface residue."""
     if not interface_ids:
         return float("nan")
     term_ca = _ca_coord(array, binder_chain, term_res_id)
@@ -184,7 +168,7 @@ def _min_dist_to_interface(array, binder_chain, term_res_id, interface_ids):
 
 
 def _binder_sequence(array, chain_id):
-    """One-letter sequence of a chain, in chain order. Non-standard residues -> 'X'."""
+    """One-letter sequence in chain order; anything non-standard becomes X."""
     starts = struc.get_residue_starts(array)
     return "".join(
         _THREE_TO_ONE.get(str(array.res_name[s]), "X")
@@ -193,12 +177,9 @@ def _binder_sequence(array, chain_id):
 
 
 def _sequence_liabilities(seq):
-    """Sequence-level developability liabilities (regex, no deps).
-
-    Motifs/thresholds follow Adaptyv Bio's open `protein-qc` skill (MIT):
-    odd cysteine count, N-glycosylation sequon, deamidation, polybasic run,
-    hydrophobic run. These are flags to inspect, not hard failures.
-    """
+    """Common developability red flags, straight from the sequence. Motifs and
+    thresholds are the ones in Adaptyv's protein-qc skill (MIT). These are things
+    to look at, not automatic rejections."""
     flags = []
     n_cys = seq.count("C")
     if n_cys % 2 == 1:
@@ -221,19 +202,19 @@ _KD = {
     "P": -1.6, "S": -0.8, "T": -0.7, "W": -0.9, "Y": -1.3, "V": 4.2,
 }
 
-# Side-chain / terminus pKa values for charge & pI (a common simple set).
-_PKA_POS = {"K": 10.5, "R": 12.5, "H": 6.0}      # protonated form is positive
-_PKA_NEG = {"D": 3.9, "E": 4.1, "C": 8.5, "Y": 10.1}  # deprotonated form is negative
+# pKa for side chains and termini (a common simple set) - used for charge and pI.
+_PKA_POS = {"K": 10.5, "R": 12.5, "H": 6.0}
+_PKA_NEG = {"D": 3.9, "E": 4.1, "C": 8.5, "Y": 10.1}
 _PKA_NTERM, _PKA_CTERM = 9.0, 3.1
 
 
 def _gravy(seq):
-    """Mean Kyte-Doolittle hydropathy (GRAVY). Higher = more hydrophobic."""
+    """Mean Kyte-Doolittle hydropathy; higher means more hydrophobic."""
     vals = [_KD[a] for a in seq if a in _KD]
     return float(np.mean(vals)) if vals else float("nan")
 
 
-# Average residue masses (Da) for MW; standard Expasy values.
+# Average residue masses (Da), the usual Expasy values.
 _RES_MASS = {
     "A": 71.0788, "R": 156.1875, "N": 114.1038, "D": 115.0886, "C": 103.1388,
     "E": 129.1155, "Q": 128.1307, "G": 57.0519, "H": 137.1411, "I": 113.1594,
@@ -246,21 +227,20 @@ _AROMATIC = set("FWY")
 
 
 def _protparam(seq):
-    """The two pressing ProtParam-style properties (exact, no deps): molecular
-    weight and reduced extinction coefficient at 280 nm (Pace 1995) -- the
-    numbers you need to express and quantify a construct.
-    """
+    """The two ProtParam numbers you actually reach for at the bench: molecular
+    weight and the reduced 280 nm extinction coefficient (Pace 1995), i.e. what
+    you need to express a construct and read its concentration."""
     if not seq:
         return {"mw": float("nan"), "ext_coeff_280": float("nan")}
     mw = sum(_RES_MASS.get(a, 0.0) for a in seq) + _WATER
-    ext = 5500 * seq.count("W") + 1490 * seq.count("Y")           # reduced Cys
+    ext = 5500 * seq.count("W") + 1490 * seq.count("Y")   # reduced (no cystines)
     return {"mw": mw, "ext_coeff_280": float(ext)}
 
 
 def _epitope_composition(array, target_iface):
-    """(hydrophobic fraction, aromatic count) of the epitope residues -- the
-    chemical 'grippability'/anchor content a binder engages. Composition-based
-    (residue identity), complementary to epitope_planarity (shape)."""
+    """Hydrophobic fraction and aromatic count of the epitope residues - the
+    anchor chemistry a binder has to grip. This is about residue identity, so it
+    complements epitope_planarity, which is about shape."""
     if not target_iface:
         return float("nan"), 0
     types = []
@@ -276,7 +256,7 @@ def _epitope_composition(array, target_iface):
 
 
 def _charge_at_ph(seq, ph):
-    """Net charge of the sequence at a given pH (Henderson-Hasselbalch)."""
+    """Net charge at a given pH (Henderson-Hasselbalch)."""
     pos = 1.0 / (1.0 + 10 ** (ph - _PKA_NTERM))
     for a, pk in _PKA_POS.items():
         pos += seq.count(a) / (1.0 + 10 ** (ph - pk))
@@ -291,7 +271,7 @@ def _net_charge(seq, ph=7.4):
 
 
 def _isoelectric_point(seq):
-    """Approximate pI by bisection (pKa-set dependent; treat as a guide)."""
+    """pI by bisection. It leans on the pKa set above, so treat it as a guide."""
     if not seq:
         return float("nan")
     lo, hi = 0.0, 14.0
@@ -305,14 +285,14 @@ def _isoelectric_point(seq):
 
 
 def _principal_axis(coords):
-    """Unit vector along the direction of greatest variance (long axis)."""
+    """Unit vector along the long axis (direction of most spread)."""
     centered = coords - coords.mean(axis=0)
     _, _, vh = np.linalg.svd(centered, full_matrices=False)
     return vh[0]
 
 
 def _target_interface_res(array, binder_chain, target_chains, cutoff):
-    """(chain, res_id) of target residues with a heavy atom within cutoff of the binder."""
+    """(chain, res_id) of target residues in contact with the binder."""
     binder_mask = array.chain_id == binder_chain
     target_mask = np.isin(array.chain_id, list(target_chains))
     if not binder_mask.any() or not target_mask.any():
@@ -331,12 +311,11 @@ def _target_interface_res(array, binder_chain, target_chains, cutoff):
 
 
 def _approach_angle(binder_ca, paratope_centroid, epitope_centroid):
-    """Angle (deg, 0-90) between the binder's long axis and the paratope->epitope
-    binding axis. ~0 = end-on (binder points into the target); ~90 = side-on
-    (binder lies across the surface). A reference-free, binder-agnostic analog of
-    STCRpy's docking angle (which needs a target-class canonical frame). NaN if
-    geometry unavailable.
-    """
+    """Angle (0-90 deg) between the binder's long axis and the paratope->epitope
+    axis. Near 0 the binder points end-on into the target; near 90 it lies across
+    the surface. STCRpy measures a docking angle for TCRs against a fixed MHC
+    frame; this is the same idea without needing a reference frame, so it works
+    for any binder. NaN if we can't compute it."""
     if len(binder_ca) < 2 or paratope_centroid is None or epitope_centroid is None:
         return float("nan")
     axis = _principal_axis(binder_ca)
@@ -344,18 +323,18 @@ def _approach_angle(binder_ca, paratope_centroid, epitope_centroid):
     n_bind = np.linalg.norm(binding)
     if n_bind == 0:
         return float("nan")
-    cos = abs(float(np.dot(axis, binding / n_bind)))  # axis is undirected
+    cos = abs(float(np.dot(axis, binding / n_bind)))   # axis has no direction
     return float(np.degrees(np.arccos(min(cos, 1.0))))
 
 
 def _planarity_rmsd(coords):
-    """RMSD (A) of points to their best-fit plane. Small = flat epitope patch
-    (low grippability); larger = concave/knobby. NaN with < 3 points."""
+    """RMSD of points to their best-fit plane. Small = a flat epitope patch
+    (little to grip); bigger = concave/knobby. NaN below 3 points."""
     if len(coords) < 3:
         return float("nan")
     centered = coords - coords.mean(axis=0)
     _, _, vh = np.linalg.svd(centered, full_matrices=False)
-    normal = vh[-1]  # least-variance direction
+    normal = vh[-1]
     return float(np.sqrt(np.mean((centered @ normal) ** 2)))
 
 
@@ -363,7 +342,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
                         relsasa, interface_cutoff, exposure_cutoff):
     ordered_ids = _chain_res_ids(array, binder_chain)
     nterm_id, cterm_id = (ordered_ids[0], ordered_ids[-1]) if ordered_ids else (None, None)
-    # Residue one in from each terminus, for the chain-extension direction.
+    # one residue in from each end, for the chain-extension direction
     n_adj_id = ordered_ids[1] if len(ordered_ids) >= 2 else None
     c_adj_id = ordered_ids[-2] if len(ordered_ids) >= 2 else None
 
@@ -378,30 +357,26 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     n_dist = _min_dist_to_interface(array, binder_chain, nterm_id, interface_ids)
     c_dist = _min_dist_to_interface(array, binder_chain, cterm_id, interface_ids)
 
-    # Orientation: does the terminus extend toward (>0) or away from (<0) the paratope?
     paratope = _paratope_centroid(array, binder_chain, interface_ids)
     n_orient = _terminus_orientation(_ca_coord(array, binder_chain, nterm_id),
                                      _ca_coord(array, binder_chain, n_adj_id), paratope)
     c_orient = _terminus_orientation(_ca_coord(array, binder_chain, cterm_id),
                                      _ca_coord(array, binder_chain, c_adj_id), paratope)
 
-    # SG-SASA only meaningful when the terminal residue is a cysteine.
+    # only meaningful if the terminal residue is actually a cysteine
     n_sg = _sg_sasa(array, atom_sasa, binder_chain, nterm_id) if _resname(nterm_id) == "CYS" else float("nan")
     c_sg = _sg_sasa(array, atom_sasa, binder_chain, cterm_id) if _resname(cterm_id) == "CYS" else float("nan")
 
-    # Pose (approach angle) + grippability (epitope planarity), both reference-free.
+    # pose + grippability, both computed straight from coordinates
     binder_ca = array.coord[(array.chain_id == binder_chain) & (array.atom_name == "CA")]
     target_iface = _target_interface_res(array, binder_chain, target_chains, interface_cutoff)
     epitope_ca = np.array([c for c in (_ca_coord(array, ch, r) for ch, r in target_iface) if c is not None])
     epitope_centroid = epitope_ca.mean(axis=0) if len(epitope_ca) else None
     approach = _approach_angle(binder_ca, paratope, epitope_centroid)
     planarity = _planarity_rmsd(epitope_ca)
-
-    # Epitope anchor chemistry (grippability, complementary to planarity/shape).
     epi_hyd_frac, epi_aromatic_n = _epitope_composition(array, target_iface)
 
-    # Sequence-level developability signals (Adaptyv protein-qc motifs/expression
-    # + pressing ProtParam properties).
+    # sequence-side developability (reuse the one sequence we pull out)
     binder_seq = _binder_sequence(array, binder_chain)
     liabilities = _sequence_liabilities(binder_seq)
     gravy = _gravy(binder_seq)
@@ -417,9 +392,9 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     if np.isfinite(gravy) and gravy > 0.4:
         warnings.append(f"hydrophobic (GRAVY={gravy:.2f}): solubility/aggregation risk")
     if chain_lens.get(binder_chain) == max(chain_lens.values()):
-        warnings.append("binder is the LARGEST chain -- binder/target may be flipped")
+        warnings.append("binder is the largest chain, so binder/target may be flipped")
     if np.isfinite(binder_bsa) and binder_bsa < 300.0:
-        warnings.append(f"small interface (binder BSA={binder_bsa:.0f} A^2) -- possibly weak/spurious")
+        warnings.append(f"small interface (binder BSA={binder_bsa:.0f} A^2): possibly weak/spurious")
 
     if not interface_ids:
         recommended = "N/A"
@@ -476,26 +451,14 @@ def score_structure(path, binder_chains=None, target_chains=None,
                     interface_cutoff=5.0, exposure_cutoff=0.25, verbose=True):
     """Score every binder chain in one structure file.
 
-    Parameters
-    ----------
-    path : str
-        Path to a PDB or CIF file.
-    binder_chains : list[str] | None
-        Binder chain ids. If None/empty, the binder is auto-guessed (shortest
-        chain in the length window) and, when `verbose`, the guess is printed.
-    target_chains : list[str] | None
-        Target chain ids. If None/empty, defaults to every non-binder chain.
-    interface_cutoff : float
-        Heavy-atom distance (A) defining an interface residue.
-    exposure_cutoff : float
-        relSASA below which a terminus is flagged "buried".
-    verbose : bool
-        Print the auto-guess line when the binder is guessed.
+    binder_chains / target_chains are lists of chain ids. Leave binder_chains
+    empty to auto-guess it (shortest chain in the length window, printed when
+    verbose); leave target_chains empty to use every other chain as target.
+    interface_cutoff is the heavy-atom contact distance in A; exposure_cutoff is
+    the relSASA below which a terminus counts as buried.
 
-    Returns
-    -------
-    list[dict]
-        One row dict per binder chain (or a single ``{"pdb", "error"}`` row).
+    Returns one dict per binder chain, or a single {"pdb", "error"} dict if the
+    requested chains aren't there.
     """
     binder_chains = list(binder_chains) if binder_chains else []
     target_chains = list(target_chains) if target_chains else []
@@ -517,7 +480,7 @@ def score_structure(path, binder_chains=None, target_chains=None,
         if verbose:
             print(f"[auto] {name}: binder guess = {binders[0]} (chain lengths {chain_lens})")
 
-    # Compute complex SASA once; reuse for both per-residue relSASA and SG-SASA.
+    # SASA of the whole complex once, reused for relSASA and the SG lookups
     atom_sasa = np.nan_to_num(struc.sasa(array), nan=0.0)
     relsasa = _residue_relsasa(array, atom_sasa)
     rows = []

@@ -15,11 +15,11 @@ from .paths import gather_paths
 _DESCRIPTION = """\
 Pick the terminus to tag on a designed protein binder.
 
-For each binder chain in each predicted binder-target complex, reports per
-terminus: relative SASA (exposure), CA-CA distance to the paratope, orientation
-(does the chain extend toward the interface?), and Cys-SG SASA. Recommends the
-terminus farther from the interface, with warnings for buried / ambiguous /
-interface-facing termini. Pure geometry -- no folding, no GPU, no network.
+For each binder chain in a predicted binder-target complex it reports, per
+terminus, the relative SASA (exposure), the CA-CA distance to the paratope, the
+orientation (does the chain point back at the interface?) and the Cys-SG SASA,
+then recommends the terminus farther from the interface and flags buried,
+ambiguous or interface-facing cases. Just geometry: no folding, no GPU, no network.
 """
 
 
