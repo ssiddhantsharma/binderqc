@@ -19,6 +19,10 @@ that terminus is buried, when the two termini are roughly equidistant, when the
 recommended terminus points back toward the interface, or when the binder/target
 chain assignment looks flipped. Pure geometry — no folding, no GPU, no network.
 
+It also reports the binder's **buried surface area** (`binder_bsa`, Å²) as an
+interface-size sanity check — a tiny interface is the strongest single sign of a
+spurious binder — and flags interfaces under 300 Å².
+
 ## Install
 
 ```bash
@@ -96,11 +100,25 @@ tests/                        test_scorer.py · data/7JZU_LCB1_RBD.pdb
 
 One row per `(structure, binder_chain)`:
 
-`pdb, binder_chain, target_chains, binder_len, n_interface_res,`
+`pdb, binder_chain, target_chains, binder_len, n_interface_res, binder_bsa,`
 `nterm_resnum, nterm_resname, nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,`
 `cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface, cterm_orientation, cterm_sg_sasa,`
 `recommended_tag ("N" | "C" | "N/A"), warnings`
 
+## Related work & design notes
+
+The interface-size metric (buried surface area) is a deliberately lightweight,
+**PLIP-free** reimplementation of the interface-profiling idea from
+[STCRpy](https://doi.org/10.1093/bioinformatics/btaf566) (Bioinformatics, 2025),
+which computes richer per-contact interactions but is TCR-specific and depends on
+[PLIP](https://github.com/pharmai/plip) (GPL-2.0). This tool keeps to buried-area
+geometry computed with biotite so it stays MIT-licensed and dependency-light, and
+works for any binder rather than only TCRs. The terminus / tag-site scoring is
+distinct from design-time terminus losses (e.g.
+[BindCraft](https://github.com/martinpacesa/BindCraft)) in that it is a post-hoc
+QC score of an existing predicted complex, not an optimization objective.
+
 ## License
 
 MIT
+

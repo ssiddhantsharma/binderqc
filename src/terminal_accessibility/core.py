@@ -99,6 +99,19 @@ def _sg_sasa(array, atom_sasa, chain_id, res_id):
     return float(atom_sasa[mask][0]) if mask.any() else float("nan")
 
 
+def _binder_bsa(array, atom_sasa, binder_chain):
+    """Buried surface area (A^2) of the binder upon binding: SASA of the binder
+    alone minus its SASA in the complex. A small interface is the strongest
+    single sign of a spurious binder. PLIP-free -- pure biotite SASA.
+    """
+    mask = array.chain_id == binder_chain
+    if not mask.any():
+        return float("nan")
+    iso = np.nan_to_num(struc.sasa(array[mask]), nan=0.0)
+    buried = np.clip(iso - atom_sasa[mask], 0.0, None).sum()
+    return float(buried)
+
+
 def _ca_coord(array, chain_id, res_id):
     mask = (array.chain_id == chain_id) & (array.res_id == res_id) & (array.atom_name == "CA")
     return array.coord[mask][0] if mask.any() else None
@@ -175,6 +188,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         return str(array.res_name[m][0]) if m.any() else ""
 
     interface_ids = _interface_residue_ids(array, binder_chain, target_chains, interface_cutoff)
+    binder_bsa = _binder_bsa(array, atom_sasa, binder_chain)
     n_rel = relsasa.get((binder_chain, nterm_id), float("nan"))
     c_rel = relsasa.get((binder_chain, cterm_id), float("nan"))
     n_dist = _min_dist_to_interface(array, binder_chain, nterm_id, interface_ids)
@@ -194,6 +208,8 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     warnings = []
     if chain_lens.get(binder_chain) == max(chain_lens.values()):
         warnings.append("binder is the LARGEST chain -- binder/target may be flipped")
+    if np.isfinite(binder_bsa) and binder_bsa < 300.0:
+        warnings.append(f"small interface (binder BSA={binder_bsa:.0f} A^2) -- possibly weak/spurious")
 
     if not interface_ids:
         recommended = "N/A"
@@ -218,6 +234,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "target_chains": ",".join(target_chains),
         "binder_len": chain_lens.get(binder_chain, 0),
         "n_interface_res": len(interface_ids),
+        "binder_bsa": round(binder_bsa, 1) if np.isfinite(binder_bsa) else float("nan"),
         "nterm_resnum": nterm_id,
         "nterm_resname": _resname(nterm_id),
         "nterm_relsasa": round(n_rel, 3) if np.isfinite(n_rel) else float("nan"),

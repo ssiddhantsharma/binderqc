@@ -16,7 +16,7 @@ from terminal_accessibility import score_structure
 FIXTURE = Path(__file__).parent / "data" / "7JZU_LCB1_RBD.pdb"
 
 EXPECTED_COLUMNS = {
-    "pdb", "binder_chain", "target_chains", "binder_len", "n_interface_res",
+    "pdb", "binder_chain", "target_chains", "binder_len", "n_interface_res", "binder_bsa",
     "nterm_resnum", "nterm_resname", "nterm_relsasa", "nterm_dist_to_interface",
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
@@ -43,6 +43,13 @@ def test_schema(row):
 def test_finds_an_interface(row):
     # Pure CA/heavy-atom geometry -> deterministic across biotite versions.
     assert row["n_interface_res"] > 10
+
+
+def test_interface_bsa_is_substantial(row):
+    # LCB1 is a real picomolar binder -> a large buried interface, well clear of
+    # the small-interface (300 A^2) warning threshold.
+    assert row["binder_bsa"] > 500
+    assert "small interface" not in row["warnings"]
 
 
 def test_recommends_terminus_farther_from_interface(row):
