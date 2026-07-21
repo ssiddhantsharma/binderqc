@@ -6,6 +6,7 @@
 </p>
 
 <p align="center">
+  <a href="https://pypi.org/project/binderqc/"><img src="https://img.shields.io/pypi/v/binderqc.svg" alt="PyPI"></a>
   <a href="https://github.com/ssiddhantsharma/binderqc/actions/workflows/ci.yml"><img src="https://github.com/ssiddhantsharma/binderqc/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
@@ -19,10 +20,11 @@
 ## Install
 
 ```bash
-pip install -e .          # or: uv pip install -e .
+pip install binderqc
 ```
 
-Python 3.10+. Pulls in `biotite`, `numpy`, and `pandas`.
+Python 3.10+. Pulls in `biotite`, `numpy`, and `pandas`. (From source, for
+development: `pip install -e ".[test]"`.)
 
 ## Usage
 
