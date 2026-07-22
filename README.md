@@ -1,8 +1,7 @@
 <h1 align="center">binderqc</h1>
 
 <p align="center">
-  Quality control and tag-site scoring for designed protein binders. Geometry and
-  sequence only, one CSV row per binder, from a predicted complex.
+  Quality control and tag-site scoring for designed protein binders.
 </p>
 
 <p align="center">
@@ -107,9 +106,7 @@ targets: the bottleneck is selecting good binders, not designing them.
 In that work LCB1 buries ~1,000 Å² and forms "multiple hydrogen bonds and salt
 bridges … consistent with the subnanomolar affinities". binderqc on 7JZU agrees:
 1021 Å² buried area (Cao reports ~1,000 Å²), plus 2 salt bridges and 17 interface
-polar contacts. The buried area matches; the polar-contact count is a rough
-geometric proxy (no hydrogens or angles) that is consistent with "multiple", not
-an exact H-bond count. See Cao et al., *De novo design of picomolar SARS-CoV-2
+polar contacts. See Cao et al., *De novo design of picomolar SARS-CoV-2
 miniprotein inhibitors*, Science 370, 426-431 (2020),
 [doi:10.1126/science.abd9909](https://doi.org/10.1126/science.abd9909).
 
