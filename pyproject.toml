@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "binderqc"
-version = "0.1.0"
+version = "0.2.0"
 description = "Quality-control and tag-site scoring for designed protein binders, from a predicted complex"
 readme = "README.md"
 requires-python = ">=3.10"

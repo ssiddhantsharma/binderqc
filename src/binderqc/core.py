@@ -291,7 +291,6 @@ def _sequence_metrics(seq):
     return {
         "mw": round(pp["mw"], 1) if np.isfinite(pp["mw"]) else float("nan"),
         "gravy": round(gravy, 3) if np.isfinite(gravy) else float("nan"),
-        "net_charge_ph74": round(_net_charge(seq), 2) if seq else float("nan"),
         "pi": round(_isoelectric_point(seq), 2) if seq else float("nan"),
         "ext_coeff_280": pp["ext_coeff_280"],
         "sequence_liabilities": "; ".join(_sequence_liabilities(seq)),
@@ -353,6 +352,112 @@ def _planarity_rmsd(coords):
     return float(np.sqrt(np.mean((centered @ normal) ** 2)))
 
 
+# Black & Mould 1991 residue hydrophobicity (Expasy ProtScale "Hphob. / Black").
+# SAP shifts this so Gly = 0.
+_BLACK_MOULD = {
+    "A": 0.616, "R": 0.000, "N": 0.236, "D": 0.028, "C": 0.680, "E": 0.043,
+    "Q": 0.251, "G": 0.501, "H": 0.165, "I": 0.943, "L": 0.943, "K": 0.283,
+    "M": 0.738, "F": 1.000, "P": 0.711, "S": 0.359, "T": 0.450, "W": 0.878,
+    "Y": 0.880, "V": 0.825,
+}
+_CATION = {"ARG": ("NH1", "NH2", "NE"), "LYS": ("NZ",), "HIS": ("ND1", "NE2")}
+_ANION = {"ASP": ("OD1", "OD2"), "GLU": ("OE1", "OE2")}
+
+
+def _count_interface_hbonds(array, binder_chain, target_chains, cutoff=3.5):
+    """Interface N/O--N/O contacts within 3.5 A. A geometric proxy for H-bonds:
+    with no hydrogens we can't check donor/acceptor identity or angle, so this
+    counts potential polar contacts (tends to over-count)."""
+    polar = np.isin(array.element, ["N", "O"])
+    b = array.coord[polar & (array.chain_id == binder_chain)]
+    t = array.coord[polar & np.isin(array.chain_id, list(target_chains))]
+    if len(b) == 0 or len(t) == 0:
+        return 0
+    n = 0
+    for i in range(0, len(b), 2048):
+        d = np.linalg.norm(b[i:i + 2048][:, None, :] - t[None, :, :], axis=-1)
+        n += int((d <= cutoff).sum())
+    return n
+
+
+def _charged_mask(array, table):
+    m = np.zeros(len(array), dtype=bool)
+    for res, names in table.items():
+        m |= (array.res_name == res) & np.isin(array.atom_name, list(names))
+    return m
+
+
+def _count_salt_bridges(array, binder_chain, target_chains, cutoff=4.0):
+    """Interface salt bridges: distinct cross-chain residue pairs where a cationic
+    side-chain N (Arg/Lys/His) is within 4 A of an anionic side-chain O (Asp/Glu)."""
+    cat = np.where(_charged_mask(array, _CATION))[0]
+    ani = np.where(_charged_mask(array, _ANION))[0]
+    if len(cat) == 0 or len(ani) == 0:
+        return 0
+    tset = set(target_chains)
+    d = np.linalg.norm(array.coord[cat][:, None, :] - array.coord[ani][None, :, :], axis=-1)
+    pairs = set()
+    for ci, ai in zip(*np.where(d <= cutoff)):
+        gc, ga = cat[ci], ani[ai]
+        chc, cha = str(array.chain_id[gc]), str(array.chain_id[ga])
+        if (chc == binder_chain and cha in tset) or (cha == binder_chain and chc in tset):
+            pairs.add(((chc, int(array.res_id[gc])), (cha, int(array.res_id[ga]))))
+    return len(pairs)
+
+
+def _interface_packing(array, binder_chain, target_chains, binder_bsa, cutoff=4.0):
+    """Interface heavy-atom contacts (<= 4 A) per 100 A^2 of buried area. A
+    lightweight packing-density PROXY for Rosetta's contact molecular surface --
+    denser contacts per buried area = better packing. Not the validated metric."""
+    if not np.isfinite(binder_bsa) or binder_bsa <= 0:
+        return float("nan")
+    heavy = array.element != "H"
+    b = array.coord[heavy & (array.chain_id == binder_chain)]
+    t = array.coord[heavy & np.isin(array.chain_id, list(target_chains))]
+    if len(b) == 0 or len(t) == 0:
+        return float("nan")
+    n = 0
+    for i in range(0, len(b), 2048):
+        d = np.linalg.norm(b[i:i + 2048][:, None, :] - t[None, :, :], axis=-1)
+        n += int((d <= cutoff).sum())
+    return 100.0 * n / binder_bsa
+
+
+def _sap_score(array, binder_chain, radius=10.0):
+    """Hottest aggregation-prone patch on the ISOLATED binder, via a static-structure
+    Spatial Aggregation Propensity (Chennamsetty 2009). Per residue: sum, over
+    residues whose Cbeta is within `radius`, of (relative SASA x Black-Mould
+    hydrophobicity shifted so Gly=0); report the maximum. Simplifications vs the
+    original: single-structure SASA (no MD average) and whole-residue relative SASA
+    (Tien max-ASA) instead of side-chain SAA vs an Ala-X-Ala reference."""
+    sub = array[array.chain_id == binder_chain]
+    if len(sub) == 0:
+        return float("nan")
+    sasa = np.nan_to_num(struc.sasa(sub), nan=0.0)
+    res_sasa = struc.apply_residue_wise(sub, sasa, np.sum)
+    starts = struc.get_residue_starts(sub)
+    gly = _BLACK_MOULD["G"]
+    contrib, coords = [], []
+    for k, s in enumerate(starts):
+        name3 = str(sub.res_name[s])
+        ref = _REF_MAX_ASA.get(name3, 0.0)
+        rel = (res_sasa[k] / ref) if ref > 0 else 0.0
+        h = _BLACK_MOULD.get(_THREE_TO_ONE.get(name3, "X"), gly) - gly  # unknown -> 0
+        rid = int(sub.res_id[s])
+        m_cb = (sub.res_id == rid) & (sub.atom_name == "CB")
+        m_ca = (sub.res_id == rid) & (sub.atom_name == "CA")
+        c = sub.coord[m_cb][0] if m_cb.any() else (sub.coord[m_ca][0] if m_ca.any() else None)
+        if c is not None:
+            contrib.append(rel * h)
+            coords.append(c)
+    if len(coords) < 1:
+        return float("nan")
+    coords = np.array(coords)
+    contrib = np.array(contrib)
+    within = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=-1) <= radius
+    return float(np.max(within @ contrib))
+
+
 def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, chain_lens,
                         relsasa, interface_cutoff, exposure_cutoff):
     ordered_ids = _chain_res_ids(array, binder_chain)
@@ -367,6 +472,9 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
 
     interface_ids = _interface_residue_ids(array, binder_chain, target_chains, interface_cutoff)
     binder_bsa = _binder_bsa(array, atom_sasa, binder_chain)
+    n_hbonds = _count_interface_hbonds(array, binder_chain, target_chains)
+    n_salt_bridges = _count_salt_bridges(array, binder_chain, target_chains)
+    interface_packing = _interface_packing(array, binder_chain, target_chains, binder_bsa)
     n_rel = relsasa.get((binder_chain, nterm_id), float("nan"))
     c_rel = relsasa.get((binder_chain, cterm_id), float("nan"))
     n_dist = _min_dist_to_interface(array, binder_chain, nterm_id, interface_ids)
@@ -394,6 +502,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     # sequence-side developability + expression
     binder_seq = _binder_sequence(array, binder_chain)
     seqm = _sequence_metrics(binder_seq)
+    sap = _sap_score(array, binder_chain)
 
     # quality warnings say the binder/interface itself looks bad; tag-site
     # warnings are only about where to put a tag. qc_pass ignores the latter.
@@ -433,9 +542,11 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "pdb": name,
         "binder_chain": binder_chain,
         "target_chains": ",".join(target_chains),
-        "binder_len": chain_lens.get(binder_chain, 0),
         "n_interface_res": len(interface_ids),
         "binder_bsa": round(binder_bsa, 1) if np.isfinite(binder_bsa) else float("nan"),
+        "n_hbonds": n_hbonds,
+        "n_salt_bridges": n_salt_bridges,
+        "interface_packing": round(interface_packing, 2) if np.isfinite(interface_packing) else float("nan"),
         "approach_angle": round(approach, 1) if np.isfinite(approach) else float("nan"),
         "epitope_planarity": round(planarity, 2) if np.isfinite(planarity) else float("nan"),
         "epitope_hydrophobic_frac": round(epi_hyd_frac, 2) if np.isfinite(epi_hyd_frac) else float("nan"),
@@ -455,9 +566,9 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "recommended_tag": recommended,
         "mw": seqm["mw"],
         "gravy": seqm["gravy"],
-        "net_charge_ph74": seqm["net_charge_ph74"],
         "pi": seqm["pi"],
         "ext_coeff_280": seqm["ext_coeff_280"],
+        "sap_score": round(sap, 2) if np.isfinite(sap) else float("nan"),
         "sequence_liabilities": seqm["sequence_liabilities"],
         "warnings": "; ".join(warnings),
         "qc_pass": qc_pass,

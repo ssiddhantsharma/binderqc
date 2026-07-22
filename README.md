@@ -63,12 +63,15 @@ a tag-site advisory, so `qc_pass` stays `True`.
 
 Per binder chain:
 
-- **Interface** — buried surface area and interface residue count.
+- **Interface** — buried surface area, interface residue count, hydrogen-bond and
+  salt-bridge counts, and a contact-packing density (a lightweight proxy for
+  contact molecular surface).
 - **Pose** — approach angle (end-on vs. lying across the surface).
 - **Grippability** — epitope planarity, hydrophobic fraction, aromatic anchors.
 - **Tag site** — recommended terminus (N/C) and the numbers behind it: relative
   SASA, CA–CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
-- **Developability** — sequence liabilities, GRAVY, net charge, pI, MW, ε₂₈₀.
+- **Developability** — an SAP-style spatial aggregation score, sequence
+  liabilities, GRAVY, pI, MW, ε₂₈₀.
 
 A `warnings` column flags problems (small, flat, or anchorless interfaces;
 buried, ambiguous, or interface-facing tag sites; hydrophobic sequences).
@@ -78,13 +81,13 @@ an ambiguous terminus don't count — and `--fasta` dumps exactly those binders.
 <details>
 <summary>Full column list</summary>
 
-`pdb, binder_chain, target_chains, binder_len, n_interface_res, binder_bsa,
-approach_angle, epitope_planarity, epitope_hydrophobic_frac, epitope_aromatic_n,
-nterm_resnum, nterm_resname, nterm_relsasa, nterm_dist_to_interface,
-nterm_orientation, nterm_sg_sasa, cterm_resnum, cterm_resname, cterm_relsasa,
-cterm_dist_to_interface, cterm_orientation, cterm_sg_sasa, recommended_tag, mw,
-gravy, net_charge_ph74, pi, ext_coeff_280, sequence_liabilities, warnings,
-qc_pass, binder_sequence`
+`pdb, binder_chain, target_chains, n_interface_res, binder_bsa, n_hbonds,
+n_salt_bridges, interface_packing, approach_angle, epitope_planarity,
+epitope_hydrophobic_frac, epitope_aromatic_n, nterm_resnum, nterm_resname,
+nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
+cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface,
+cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi, ext_coeff_280,
+sap_score, sequence_liabilities, warnings, qc_pass, binder_sequence`
 </details>
 
 ## Tests
@@ -95,7 +98,22 @@ pytest
 ```
 
 Runs against a bundled example, PDB 7JZU (the LCB1 minibinder on the SARS-CoV-2
-RBD). `tests/pisa_correctness.py` is a separate script (not part of the unit
+RBD). LCB1 comes from Cao et al. (2020), whose framing is exactly what binderqc is
+built around — the bottleneck is *selecting* good binders, not designing them:
+
+> "…not in the de novo design of proteins with shape and chemical complementarity
+> to the target surface, but in recognizing the best candidates."
+
+In that work LCB1 buries ~1,000 Å² and forms "multiple hydrogen bonds and salt
+bridges … consistent with the subnanomolar affinities." binderqc run on 7JZU is in
+line with that: it reports **1021 Å²** buried area (matching the reported ~1,000 Å²),
+plus 2 salt bridges and 17 interface polar contacts. The buried-area figure is a
+genuine quantitative match; the polar-contact count is a geometric proxy (no
+hydrogens/angles) that corroborates "multiple," not an exact H-bond count. See Cao
+et al., *De novo design of picomolar SARS-CoV-2 miniprotein inhibitors*, Science
+**370**, 426–431 (2020), [doi:10.1126/science.abd9909](https://doi.org/10.1126/science.abd9909).
+
+`tests/pisa_correctness.py` is a separate script (not part of the unit
 tests) that downloads 18 public complexes from RCSB and PDBePISA and checks the
 interface area against PISA (r ≈ 1.0, ~1% median error):
 

@@ -16,13 +16,14 @@ from binderqc import score_structure
 FIXTURE = Path(__file__).parent / "data" / "7JZU_LCB1_RBD.pdb"
 
 EXPECTED_COLUMNS = {
-    "pdb", "binder_chain", "target_chains", "binder_len", "n_interface_res", "binder_bsa",
+    "pdb", "binder_chain", "target_chains", "n_interface_res", "binder_bsa",
+    "n_hbonds", "n_salt_bridges", "interface_packing",
     "approach_angle", "epitope_planarity", "epitope_hydrophobic_frac", "epitope_aromatic_n",
     "nterm_resnum", "nterm_resname", "nterm_relsasa", "nterm_dist_to_interface",
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
-    "recommended_tag", "mw", "gravy", "net_charge_ph74", "pi", "ext_coeff_280",
+    "recommended_tag", "mw", "gravy", "pi", "ext_coeff_280", "sap_score",
     "sequence_liabilities", "warnings", "qc_pass", "binder_sequence",
 }
 
@@ -39,7 +40,6 @@ def test_schema(row):
     assert set(row) == EXPECTED_COLUMNS
     assert row["binder_chain"] == "A"
     assert row["target_chains"] == "B"
-    assert row["binder_len"] == 55
     assert len(row["binder_sequence"]) == 55
 
 
@@ -144,6 +144,13 @@ def test_nonstandard_residue_relsasa_is_nan():
     arr = struc.array([atom])
     rel = _residue_relsasa(arr, np.array([12.3]))
     assert math.isnan(rel[("A", 1)])
+
+
+def test_interface_and_aggregation_metrics(row):
+    assert isinstance(row["n_hbonds"], int) and row["n_hbonds"] >= 0
+    assert isinstance(row["n_salt_bridges"], int) and row["n_salt_bridges"] >= 0
+    assert row["interface_packing"] > 0                 # a real interface has contacts
+    assert row["sap_score"] > 0                         # LCB1 has some exposed hydrophobics
 
 
 def test_qc_pass_ignores_tag_site_warnings(row):
