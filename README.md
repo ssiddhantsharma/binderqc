@@ -1,8 +1,8 @@
 <h1 align="center">binderqc</h1>
 
 <p align="center">
-  Quality control and tag-site scoring for designed protein binders — geometry and
-  sequence only, one CSV row per binder, straight from a predicted complex.
+  Quality control and tag-site scoring for designed protein binders. Geometry and
+  sequence only, one CSV row per binder, from a predicted complex.
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 
 <p align="center">
   <img src="docs/schematic.png" width="860"
-       alt="From a predicted binder–target complex, binderqc reports interface, pose, grippability, tag site, and developability">
+       alt="From a predicted binder-target complex, binderqc reports interface, pose, grippability, tag site, and developability">
 </p>
 
 ## Install
@@ -23,8 +23,8 @@
 pip install binderqc
 ```
 
-Python 3.10+. Pulls in `biotite`, `numpy`, and `pandas`. (From source, for
-development: `pip install -e ".[test]"`.)
+Python 3.10+. Pulls in `biotite`, `numpy`, and `pandas`. For development from
+source: `pip install -e ".[test]"`.
 
 ## Usage
 
@@ -38,7 +38,7 @@ rows = score_structure("complex.pdb", binder_chains=["A"], target_chains=["B"])
 ```
 
 Inputs are PDB/CIF files, globs, or directories. Leave `--binder-chains` off to
-guess the binder as the shortest chain (20–250 aa, printed for each file);
+guess the binder as the shortest chain (20-250 aa, printed for each file);
 `--target-chains` defaults to the remaining chains.
 
 | flag | default | meaning |
@@ -56,27 +56,27 @@ Example output for the bundled LCB1 minibinder (a few of the columns):
 |---|---|---|---|---|---|
 | C | 1021.4 | 3.21 | 11 | 4.17 | True |
 
-Its `warnings` field reads *both termini ~equidistant from interface (ambiguous)* —
+Its `warnings` field reads "both termini ~equidistant from interface (ambiguous)",
 a tag-site advisory, so `qc_pass` stays `True`.
 
 ## What it reports
 
 Per binder chain:
 
-- **Interface** — buried surface area, interface residue count, hydrogen-bond and
+- **Interface**: buried surface area, interface residue count, hydrogen-bond and
   salt-bridge counts, and a contact-packing density (a lightweight proxy for
   contact molecular surface).
-- **Pose** — approach angle (end-on vs. lying across the surface).
-- **Grippability** — epitope planarity, hydrophobic fraction, aromatic anchors.
-- **Tag site** — recommended terminus (N/C) and the numbers behind it: relative
-  SASA, CA–CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
-- **Developability** — an SAP-style spatial aggregation score, sequence
+- **Pose**: approach angle (end-on vs. lying across the surface).
+- **Grippability**: epitope planarity, hydrophobic fraction, aromatic anchors.
+- **Tag site**: recommended terminus (N/C) and the numbers behind it: relative
+  SASA, CA-CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
+- **Developability**: an SAP-style spatial aggregation score, sequence
   liabilities, GRAVY, pI, MW, ε₂₈₀.
 
-A `warnings` column flags problems (small, flat, or anchorless interfaces;
-buried, ambiguous, or interface-facing tag sites; hydrophobic sequences).
-`qc_pass` is true when there are no *quality* warnings — tag-site advisories like
-an ambiguous terminus don't count — and `--fasta` dumps exactly those binders.
+A `warnings` column flags problems (small, flat, or anchorless interfaces; buried,
+ambiguous, or interface-facing tag sites; hydrophobic sequences). `qc_pass` is
+true when there are no quality warnings (tag-site advisories like an ambiguous
+terminus do not count), and `--fasta` writes those binders.
 
 <details>
 <summary>Full column list</summary>
@@ -98,24 +98,24 @@ pytest
 ```
 
 Runs against a bundled example, PDB 7JZU (the LCB1 minibinder on the SARS-CoV-2
-RBD). LCB1 comes from Cao et al. (2020), whose framing is exactly what binderqc is
-built around — the bottleneck is *selecting* good binders, not designing them:
+RBD). LCB1 comes from Cao et al. (2020), which frames the problem binderqc
+targets: the bottleneck is selecting good binders, not designing them.
 
 > "…not in the de novo design of proteins with shape and chemical complementarity
 > to the target surface, but in recognizing the best candidates."
 
 In that work LCB1 buries ~1,000 Å² and forms "multiple hydrogen bonds and salt
-bridges … consistent with the subnanomolar affinities." binderqc run on 7JZU is in
-line with that: it reports **1021 Å²** buried area (matching the reported ~1,000 Å²),
-plus 2 salt bridges and 17 interface polar contacts. The buried-area figure is a
-genuine quantitative match; the polar-contact count is a geometric proxy (no
-hydrogens/angles) that corroborates "multiple," not an exact H-bond count. See Cao
-et al., *De novo design of picomolar SARS-CoV-2 miniprotein inhibitors*, Science
-**370**, 426–431 (2020), [doi:10.1126/science.abd9909](https://doi.org/10.1126/science.abd9909).
+bridges … consistent with the subnanomolar affinities". binderqc on 7JZU agrees:
+1021 Å² buried area (Cao reports ~1,000 Å²), plus 2 salt bridges and 17 interface
+polar contacts. The buried area matches; the polar-contact count is a rough
+geometric proxy (no hydrogens or angles) that is consistent with "multiple", not
+an exact H-bond count. See Cao et al., *De novo design of picomolar SARS-CoV-2
+miniprotein inhibitors*, Science 370, 426-431 (2020),
+[doi:10.1126/science.abd9909](https://doi.org/10.1126/science.abd9909).
 
-`tests/pisa_correctness.py` is a separate script (not part of the unit
-tests) that downloads 18 public complexes from RCSB and PDBePISA and checks the
-interface area against PISA (r ≈ 1.0, ~1% median error):
+`tests/pisa_correctness.py` is a separate script (not part of the unit tests). It
+downloads 18 public complexes from RCSB and PDBePISA and checks the interface area
+against PISA (r ~ 1.0, about 1% median error):
 
 ```bash
 pip install -e ".[validation]"
