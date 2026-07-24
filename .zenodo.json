@@ -1,0 +1,17 @@
+{
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "MIT",
+  "title": "binderqc: quality control and tag-site scoring for designed protein binders",
+  "description": "Quality control and tag-site scoring for de novo designed protein binders, computed from a predicted binder-target complex. Reports a QC panel spanning tag-site accessibility, interface metrics, pose, grippability, and developability.",
+  "keywords": [
+    "protein-design",
+    "bioinformatics",
+    "structural-biology",
+    "protein-engineering",
+    "binder-design"
+  ],
+  "creators": [
+    { "name": "Sharma, Siddhant" }
+  ]
+}
