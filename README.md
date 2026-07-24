@@ -9,6 +9,7 @@
   <a href="https://github.com/ssiddhantsharma/binderqc/actions/workflows/ci.yml"><img src="https://github.com/ssiddhantsharma/binderqc/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
+  <a href="https://doi.org/10.5281/zenodo.21529428"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.21529428.svg" alt="DOI"></a>
 </p>
 
 <p align="center">

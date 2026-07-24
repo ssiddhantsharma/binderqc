@@ -8,11 +8,19 @@ type: software
 authors:
   - given-names: Siddhant
     family-names: Sharma
-version: 0.2.0
-date-released: "2026-07-22"
+version: 0.2.1
+date-released: "2026-07-24"
+doi: 10.5281/zenodo.21529428
 license: MIT
 repository-code: "https://github.com/ssiddhantsharma/binderqc"
 url: "https://github.com/ssiddhantsharma/binderqc"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.21529428
+    description: "Concept DOI (all versions)"
+  - type: doi
+    value: 10.5281/zenodo.21529429
+    description: "Version DOI (v0.2.1)"
 keywords:
   - protein-design
   - bioinformatics
