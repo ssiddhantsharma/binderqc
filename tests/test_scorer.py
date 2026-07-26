@@ -23,7 +23,7 @@ EXPECTED_COLUMNS = {
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
-    "recommended_tag", "mw", "gravy", "pi", "ext_coeff_280", "sap_score",
+    "recommended_tag", "mw", "gravy", "pi", "ext_coeff_280", "sap_score", "sap_total",
     "sequence_liabilities", "warnings", "qc_pass", "binder_sequence",
 }
 
@@ -151,6 +151,7 @@ def test_interface_and_aggregation_metrics(row):
     assert isinstance(row["n_salt_bridges"], int) and row["n_salt_bridges"] >= 0
     assert row["interface_packing"] > 0                 # a real interface has contacts
     assert row["sap_score"] > 0                         # LCB1 has some exposed hydrophobics
+    assert row["sap_total"] >= row["sap_score"]          # whole-surface load >= single hottest patch
 
 
 def test_qc_pass_ignores_tag_site_warnings(row):

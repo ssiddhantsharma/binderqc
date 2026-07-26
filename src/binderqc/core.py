@@ -424,15 +424,21 @@ def _interface_packing(array, binder_chain, target_chains, binder_bsa, cutoff=4.
 
 
 def _sap_score(array, binder_chain, radius=10.0):
-    """Hottest aggregation-prone patch on the ISOLATED binder, via a static-structure
-    Spatial Aggregation Propensity (Chennamsetty 2009). Per residue: sum, over
-    residues whose Cbeta is within `radius`, of (relative SASA x Black-Mould
-    hydrophobicity shifted so Gly=0); report the maximum. Simplifications vs the
-    original: single-structure SASA (no MD average) and whole-residue relative SASA
-    (Tien max-ASA) instead of side-chain SAA vs an Ala-X-Ala reference."""
+    """Static-structure Spatial Aggregation Propensity (Chennamsetty 2009) on the
+    ISOLATED binder. Per residue: sum, over residues whose Cbeta is within `radius`,
+    of (relative SASA x Black-Mould hydrophobicity shifted so Gly=0).
+
+    Returns a (peak, total_load) tuple:
+      peak       - the maximum windowed value = hottest aggregation-prone patch.
+      total_load - sum of the positive windowed values = whole-surface aggregation
+                   load. Peak flags one bad spot; load reflects how much sticky
+                   surface there is overall (the two are complementary).
+    Simplifications vs the original: single-structure SASA (no MD average) and
+    whole-residue relative SASA (Tien max-ASA) instead of side-chain SAA vs an
+    Ala-X-Ala reference."""
     sub = array[array.chain_id == binder_chain]
     if len(sub) == 0:
-        return float("nan")
+        return float("nan"), float("nan")
     sasa = np.nan_to_num(struc.sasa(sub), nan=0.0)
     res_sasa = struc.apply_residue_wise(sub, sasa, np.sum)
     starts = struc.get_residue_starts(sub)
@@ -451,11 +457,12 @@ def _sap_score(array, binder_chain, radius=10.0):
             contrib.append(rel * h)
             coords.append(c)
     if len(coords) < 1:
-        return float("nan")
+        return float("nan"), float("nan")
     coords = np.array(coords)
     contrib = np.array(contrib)
     within = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=-1) <= radius
-    return float(np.max(within @ contrib))
+    windowed = within @ contrib
+    return float(np.max(windowed)), float(np.sum(np.clip(windowed, 0.0, None)))
 
 
 def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, chain_lens,
@@ -502,7 +509,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     # sequence-side developability + expression
     binder_seq = _binder_sequence(array, binder_chain)
     seqm = _sequence_metrics(binder_seq)
-    sap = _sap_score(array, binder_chain)
+    sap, sap_total = _sap_score(array, binder_chain)
 
     # quality warnings say the binder/interface itself looks bad; tag-site
     # warnings are only about where to put a tag. qc_pass ignores the latter.
@@ -569,6 +576,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "pi": seqm["pi"],
         "ext_coeff_280": seqm["ext_coeff_280"],
         "sap_score": round(sap, 2) if np.isfinite(sap) else float("nan"),
+        "sap_total": round(sap_total, 2) if np.isfinite(sap_total) else float("nan"),
         "sequence_liabilities": seqm["sequence_liabilities"],
         "warnings": "; ".join(warnings),
         "qc_pass": qc_pass,
