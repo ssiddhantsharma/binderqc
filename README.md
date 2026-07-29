@@ -70,8 +70,11 @@ Per binder chain:
 - **Grippability**: epitope planarity, hydrophobic fraction, aromatic anchors.
 - **Tag site**: recommended terminus (N/C) and the numbers behind it: relative
   SASA, CA-CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
-- **Developability**: an SAP-style spatial aggregation score, sequence
-  liabilities, GRAVY, pI, MW, ε₂₈₀.
+- **Developability**: two complementary aggregation scores — an SAP-style spatial
+  aggregation score (`sap_score`/`sap_total`) and an Aggrescan3D score
+  (`a3d_score`/`a3d_total_positive`, a faithful pure-Python port of Aggrescan3D
+  1.0.2's a3v scale + algorithm; Pearson r≈0.92 vs the reference tool) — plus
+  sequence liabilities, GRAVY, pI, MW, ε₂₈₀.
 
 A `warnings` column flags problems (small, flat, or anchorless interfaces; buried,
 ambiguous, or interface-facing tag sites; hydrophobic sequences). `qc_pass` is
@@ -87,7 +90,8 @@ epitope_hydrophobic_frac, epitope_aromatic_n, nterm_resnum, nterm_resname,
 nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
 cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface,
 cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi, ext_coeff_280,
-sap_score, sequence_liabilities, warnings, qc_pass, binder_sequence`
+sap_score, sap_total, a3d_score, a3d_total_positive, sequence_liabilities,
+warnings, qc_pass, binder_sequence`
 </details>
 
 ## Tests
