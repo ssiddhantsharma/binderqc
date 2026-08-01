@@ -10,7 +10,7 @@ import argparse
 import os
 import sys
 
-from .core import score_structure
+from .core import score_structure, grippability_consensus
 from .paths import gather_paths
 
 _DESCRIPTION = """\
@@ -40,6 +40,10 @@ def main(argv=None):
     ap.add_argument("--out", default="binderqc.csv", help="output CSV path")
     ap.add_argument("--fasta", default="",
                     help="also write QC-passing binders (no quality warnings) to this FASTA path")
+    ap.add_argument("--iara-score", type=float, default=None,
+                    help="learned target-side grippability of the epitope (0-100 mean hotspot "
+                         "prob, e.g. from IARA); when given, adds a physical-vs-learned "
+                         "grippability_consensus column (grippable/flat/disagree)")
     args = ap.parse_args(argv)
 
     import pandas as pd  # imported here so `--help` works without pandas
@@ -57,6 +61,17 @@ def main(argv=None):
                                         args.interface_cutoff, args.exposure_cutoff))
         except Exception as e:  # noqa: BLE001 - keep the batch going, record the failure
             rows.append({"pdb": p, "error": str(e)})
+
+    # Optional: fold in a learned target-side grippability (e.g. IARA epitope mean,
+    # computed by the caller so binderqc stays dependency- and license-clean) and
+    # report where physical and learned agree. Only touches the CLI output, never
+    # the core score_structure schema.
+    if args.iara_score is not None:
+        for r in rows:
+            if "error" in r:
+                continue
+            r["iara_grippability"] = round(args.iara_score, 1)
+            r["grippability_consensus"] = grippability_consensus(r, args.iara_score)["consensus"]
 
     df = pd.DataFrame(rows)
     df.to_csv(args.out, index=False)

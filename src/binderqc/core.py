@@ -255,6 +255,58 @@ def _epitope_composition(array, target_iface):
     return float(hyd), int(arom)
 
 
+def _glyco_occluded_epitope(array, target_chains, target_iface,
+                            expose_cut=0.20, reach=10.0):
+    """N-glycosylation sequons (N-X-[S/T], X != P) on the TARGET that are BOTH
+    solvent-exposed AND at/near the epitope -> an installed glycan sterically masks
+    that patch for a small binder, even where the bare backbone looks grippable.
+
+    Two things make this SASA-aware and not just a sequence grep:
+      - Exposure is measured on the target ALONE, not the complex. Glycans are
+        installed before the binder binds, and in the complex an engaged epitope
+        Asn reads as buried - so complex SASA would wrongly hide the very sites we
+        care about. We recompute target-only SASA here.
+      - Sequons are read off the modeled chain (consecutive res_ids), so a gap from
+        an unresolved loop can't fabricate a phantom sequon.
+
+    Returns a sorted list like ["A:N1119"] of occluding Asn sites.
+    """
+    if not target_iface:
+        return []
+    iface_cas = np.array([c for c in (_ca_coord(array, ch, r) for ch, r in target_iface) if c is not None])
+    if not len(iface_cas):
+        return []
+    tmask = np.isin(array.chain_id, list(target_chains))
+    tarr = array[tmask]
+    tsasa = np.nan_to_num(struc.sasa(tarr), nan=0.0)              # target-only SASA (no binder)
+    tres = struc.apply_residue_wise(tarr, tsasa, np.sum)
+    tstarts = struc.get_residue_starts(tarr)
+    trel = {}
+    for tot, st in zip(tres, tstarts):
+        ref = _REF_MAX_ASA.get(tarr.res_name[st], 0.0)
+        trel[(str(tarr.chain_id[st]), int(tarr.res_id[st]))] = (tot / ref) if ref > 0 else float("nan")
+
+    starts = struc.get_residue_starts(array)
+    hits = []
+    for chain in target_chains:
+        chain_res = [(int(array.res_id[s]), str(array.res_name[s])) for s in starts if array.chain_id[s] == chain]
+        for k in range(len(chain_res) - 2):
+            (i, ni), (j, nj), (l, nl) = chain_res[k], chain_res[k + 1], chain_res[k + 2]
+            if j != i + 1 or l != i + 2:
+                continue
+            if ni != "ASN" or nj == "PRO" or nl not in ("SER", "THR"):
+                continue
+            rel = trel.get((str(chain), i), 0.0)
+            if not (rel == rel) or rel < expose_cut:            # nan or buried -> not glycosylated
+                continue
+            ca = _ca_coord(array, chain, i)
+            if ca is None:
+                continue
+            if float(np.linalg.norm(iface_cas - ca, axis=1).min()) <= reach:
+                hits.append(f"{chain}:N{i}")
+    return sorted(set(hits))
+
+
 def _charge_at_ph(seq, ph):
     """Net charge at a given pH (Henderson-Hasselbalch)."""
     pos = 1.0 / (1.0 + 10 ** (ph - _PKA_NTERM))
@@ -576,6 +628,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     approach = _approach_angle(binder_ca, paratope, epitope_centroid)
     planarity = _planarity_rmsd(epitope_ca)
     epi_hyd_frac, epi_aromatic_n = _epitope_composition(array, target_iface)
+    glyco_sites = _glyco_occluded_epitope(array, target_chains, target_iface)
 
     # sequence-side developability + expression
     binder_seq = _binder_sequence(array, binder_chain)
@@ -590,6 +643,9 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         quality.append(f"flat epitope (planarity RMSD={planarity:.2f} A): low grippability")
     if np.isfinite(epi_hyd_frac) and epi_hyd_frac < 0.2 and epi_aromatic_n == 0:
         quality.append("polar epitope (few hydrophobic/aromatic anchors): hard to grip")
+    if glyco_sites:
+        quality.append("glyco-occluded epitope: exposed N-glycan sequon(s) at "
+                       + ", ".join(glyco_sites) + " in/near the interface (glycan can mask a grippable backbone)")
     if np.isfinite(seqm["gravy"]) and seqm["gravy"] > 0.4:
         quality.append(f"hydrophobic (GRAVY={seqm['gravy']:.2f}): solubility/aggregation risk")
     if chain_lens.get(binder_chain) == max(chain_lens.values()):
@@ -630,6 +686,8 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "epitope_planarity": round(planarity, 2) if np.isfinite(planarity) else float("nan"),
         "epitope_hydrophobic_frac": round(epi_hyd_frac, 2) if np.isfinite(epi_hyd_frac) else float("nan"),
         "epitope_aromatic_n": epi_aromatic_n,
+        "epitope_glyco_occluded": bool(glyco_sites),
+        "epitope_glyco_sites": ";".join(glyco_sites),
         "nterm_resnum": nterm_id,
         "nterm_resname": _resname(nterm_id),
         "nterm_relsasa": round(n_rel, 3) if np.isfinite(n_rel) else float("nan"),
@@ -656,6 +714,47 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "qc_pass": qc_pass,
         "binder_sequence": seqm["binder_sequence"],
     }
+
+
+def grippability_consensus(row, iara_epitope_score=None):
+    """Combine binderQC's PHYSICAL grippability read with an optional LEARNED score.
+
+    binderQC scores grippability from geometry/chemistry (epitope planarity +
+    hydrophobic fraction + aromatic anchors, already in `row`, and now the
+    glyco-occlusion flag). A learned target-side model like IARA scores it from
+    actual de-novo outcomes. They are orthogonal, so agreement is informative.
+
+    `iara_epitope_score` is the mean hotspot probability (0-100) over the epitope,
+    computed by the CALLER with whatever tool they have. It is passed in rather than
+    invoked here on purpose: binderQC stays dependency-free and MIT-clean, and never
+    vendors an externally-licensed model.
+
+    Returns {"physical_grippable", "learned_grippable", "consensus", "note"} where
+    consensus is "grippable" | "flat" | "disagree" | "physical-only". physical-flat
+    AND learned-flat is the high-confidence "do not design de-novo" call (the TNC-A1
+    Face-1 case); a disagreement is worth a human look (glycan? flexible loop?).
+    """
+    planarity = row.get("epitope_planarity", float("nan"))
+    hyd = row.get("epitope_hydrophobic_frac", float("nan"))
+    arom = row.get("epitope_aromatic_n", 0) or 0
+    # mirror binderQC's own physical bars (the flat/polar/glyco warnings)
+    phys = (planarity == planarity and planarity >= 1.0)
+    if hyd == hyd and hyd < 0.2 and arom == 0:
+        phys = False
+    if row.get("epitope_glyco_occluded"):
+        phys = False
+    if iara_epitope_score is None:
+        return {"physical_grippable": bool(phys), "learned_grippable": None,
+                "consensus": "physical-only", "note": "no learned (IARA) score provided"}
+    learned = float(iara_epitope_score) >= 50.0
+    if phys and learned:
+        c, note = "grippable", "physical + learned agree: designable"
+    elif not phys and not learned:
+        c, note = "flat", "physical + learned agree FLAT: do not design de-novo"
+    else:
+        c, note = "disagree", "physical vs learned disagree: inspect (glycan / flexible loop / conformation)"
+    return {"physical_grippable": bool(phys), "learned_grippable": bool(learned),
+            "consensus": c, "note": note}
 
 
 def score_structure(path: str, binder_chains: "list[str] | None" = None,

@@ -67,7 +67,14 @@ Per binder chain:
   salt-bridge counts, and a contact-packing density (a lightweight proxy for
   contact molecular surface).
 - **Pose**: approach angle (end-on vs. lying across the surface).
-- **Grippability**: epitope planarity, hydrophobic fraction, aromatic anchors.
+- **Grippability**: epitope planarity, hydrophobic fraction, aromatic anchors, and a
+  SASA-aware **glyco-occlusion** check (`epitope_glyco_occluded`, `epitope_glyco_sites`)
+  — N-glycosylation sequons (N-X-[S/T]) that are exposed on the *free* target and sit
+  at/near the epitope, so an installed glycan would mask an otherwise grippable patch.
+  `grippability_consensus(row, iara_score)` optionally cross-checks this physical read
+  against a learned target-side score (e.g. an IARA epitope mean, computed by the caller
+  so binderqc stays dependency-clean), returning `grippable` / `flat` / `disagree`; pass
+  `--iara-score` on the CLI to add it as a column.
 - **Tag site**: recommended terminus (N/C) and the numbers behind it: relative
   SASA, CA-CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
 - **Developability**: two complementary aggregation scores — an SAP-style spatial
@@ -76,8 +83,8 @@ Per binder chain:
   1.0.2's a3v scale + algorithm; Pearson r≈0.92 vs the reference tool) — plus
   sequence liabilities, GRAVY, pI, MW, ε₂₈₀.
 
-A `warnings` column flags problems (small, flat, or anchorless interfaces; buried,
-ambiguous, or interface-facing tag sites; hydrophobic sequences). `qc_pass` is
+A `warnings` column flags problems (small, flat, anchorless, or glyco-occluded
+interfaces; buried, ambiguous, or interface-facing tag sites; hydrophobic sequences). `qc_pass` is
 true when there are no quality warnings (tag-site advisories like an ambiguous
 terminus do not count), and `--fasta` writes those binders.
 
@@ -86,7 +93,8 @@ terminus do not count), and `--fasta` writes those binders.
 
 `pdb, binder_chain, target_chains, n_interface_res, binder_bsa, n_hbonds,
 n_salt_bridges, interface_packing, approach_angle, epitope_planarity,
-epitope_hydrophobic_frac, epitope_aromatic_n, nterm_resnum, nterm_resname,
+epitope_hydrophobic_frac, epitope_aromatic_n, epitope_glyco_occluded,
+epitope_glyco_sites, nterm_resnum, nterm_resname,
 nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
 cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface,
 cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi, ext_coeff_280,
