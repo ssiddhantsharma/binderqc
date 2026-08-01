@@ -19,6 +19,7 @@ EXPECTED_COLUMNS = {
     "pdb", "binder_chain", "target_chains", "n_interface_res", "binder_bsa",
     "n_hbonds", "n_salt_bridges", "interface_packing",
     "approach_angle", "epitope_planarity", "epitope_hydrophobic_frac", "epitope_aromatic_n",
+    "epitope_glyco_occluded", "epitope_glyco_sites",
     "nterm_resnum", "nterm_resname", "nterm_relsasa", "nterm_dist_to_interface",
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
@@ -120,6 +121,33 @@ def test_epitope_composition_reported(row):
     assert row["epitope_aromatic_n"] >= 0
 
 
+def test_glyco_occluded_epitope(row):
+    # types are stable for the schema/CSV
+    assert isinstance(row["epitope_glyco_occluded"], bool)
+    assert isinstance(row["epitope_glyco_sites"], str)
+    # LCB1 binds the RBD ACE2-binding motif; the RBD glycans (N331/N343) sit away
+    # from that epitope, so a SASA-aware, near-interface check must NOT flag them.
+    assert row["epitope_glyco_occluded"] is False
+    assert row["epitope_glyco_sites"] == ""
+
+
+def test_grippability_consensus():
+    from binderqc import grippability_consensus
+    grip = {"epitope_planarity": 2.5, "epitope_hydrophobic_frac": 0.5,
+            "epitope_aromatic_n": 2, "epitope_glyco_occluded": False}
+    flat = {"epitope_planarity": 0.4, "epitope_hydrophobic_frac": 0.1,
+            "epitope_aromatic_n": 0, "epitope_glyco_occluded": False}
+    assert grippability_consensus(grip)["consensus"] == "physical-only"   # no IARA score
+    assert grippability_consensus(grip, 70)["consensus"] == "grippable"    # both high
+    assert grippability_consensus(flat, 30)["consensus"] == "flat"         # both flat (TNC-A1 Face-1)
+    assert grippability_consensus(grip, 30)["consensus"] == "disagree"
+    assert grippability_consensus(flat, 70)["consensus"] == "disagree"
+    # a glyco-occluded epitope is physically NOT grippable no matter the shape/chemistry
+    glyco = dict(grip, epitope_glyco_occluded=True)
+    assert grippability_consensus(glyco, 80)["physical_grippable"] is False
+    assert grippability_consensus(glyco, 30)["consensus"] == "flat"
+
+
 def test_auto_guess_picks_the_small_chain():
     rows = score_structure(str(FIXTURE), verbose=False)  # no binder chains given
     assert len(rows) == 1
@@ -191,3 +219,17 @@ def test_cli_writes_csv_and_fasta(tmp_path):
           "--out", str(out), "--fasta", str(fa), str(FIXTURE)])
     assert out.exists() and out.read_text().count("\n") >= 2      # header + >=1 row
     assert fa.read_text().startswith(">")                          # LCB1 passes QC
+
+
+def test_cli_iara_score_adds_consensus_column(tmp_path):
+    # Passing a learned (IARA) epitope score wires in the physical-vs-learned
+    # consensus, and it must NOT appear when the flag is absent (schema stays lean).
+    from binderqc.cli import main
+    out = tmp_path / "out.csv"
+    main(["--binder-chains", "A", "--target-chains", "B", "--iara-score", "70",
+          "--out", str(out), str(FIXTURE)])
+    header = out.read_text().splitlines()[0]
+    assert "grippability_consensus" in header and "iara_grippability" in header
+    out2 = tmp_path / "out2.csv"
+    main(["--binder-chains", "A", "--target-chains", "B", "--out", str(out2), str(FIXTURE)])
+    assert "grippability_consensus" not in out2.read_text().splitlines()[0]
