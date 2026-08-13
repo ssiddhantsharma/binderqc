@@ -23,8 +23,8 @@
 pip install binderqc
 ```
 
-Python 3.10+. Pulls in `biotite`, `numpy`, and `pandas`. For development from
-source: `pip install -e ".[test]"`.
+Python 3.10+. Pulls in `biotite`, `numpy`, and `pandas`. To develop from source,
+`pip install -e ".[test]"`.
 
 ## Usage
 
@@ -38,7 +38,7 @@ rows = score_structure("complex.pdb", binder_chains=["A"], target_chains=["B"])
 ```
 
 Inputs are PDB/CIF files, globs, or directories. Leave `--binder-chains` off to
-guess the binder as the shortest chain (20-250 aa, printed for each file);
+guess the binder as the shortest chain (20-250 aa, printed for each file).
 `--target-chains` defaults to the remaining chains.
 
 | flag | default | meaning |
@@ -51,8 +51,8 @@ guess the binder as the shortest chain (20-250 aa, printed for each file);
 | `-j`, `--jobs` | `1` | worker processes to score a batch of files in parallel |
 | `--fasta` | off | also write the QC-passing binders to this FASTA |
 
-Scoring is CPU-only (no folding, no GPU, no network). Files in a batch are
-independent, so `-j` scales near-linearly across cores for large directories.
+Scoring is CPU-only: no folding, no GPU, no network. Files in a batch are
+independent, so `-j` scales near-linearly across cores on large directories.
 
 Example output for the bundled LCB1 minibinder (a few of the columns):
 
@@ -71,30 +71,33 @@ Per binder chain:
   salt-bridge counts, and a contact-packing density (a lightweight proxy for
   contact molecular surface).
 - **Pose**: approach angle (end-on vs. lying across the surface).
-- **Grippability**: epitope planarity, hydrophobic fraction, aromatic anchors, and a
-  SASA-aware **glyco-occlusion** check (`epitope_glyco_occluded`, `epitope_glyco_sites`)
-  — N-glycosylation sequons (N-X-[S/T]) that are exposed on the *free* target and sit
-  at/near the epitope, so an installed glycan would mask an otherwise grippable patch.
-  `grippability_consensus(row, iara_score)` optionally cross-checks this physical read
-  against a learned target-side score (e.g. an IARA epitope mean, computed by the caller
-  so binderqc stays dependency-clean), returning `grippable` / `flat` / `disagree`; pass
-  `--iara-score` on the CLI to add it as a column.
+- **Grippability**: epitope planarity, hydrophobic fraction, aromatic anchors, and
+  a SASA-aware glyco-occlusion check (`epitope_glyco_occluded`,
+  `epitope_glyco_sites`). The check flags N-glycosylation sequons (N-X-[S/T]) that
+  are exposed on the *free* target and sit at or near the epitope, where an
+  installed glycan would mask an otherwise grippable patch.
+  `grippability_consensus(row, iara_score)` optionally cross-checks this physical
+  read against a learned target-side score (for example an IARA epitope mean,
+  computed by the caller so binderqc stays dependency-clean) and returns
+  `grippable`, `flat`, or `disagree`. Pass `--iara-score` on the CLI to add it as
+  a column.
 - **Tag site**: recommended terminus (N/C) and the numbers behind it: relative
   SASA, CA-CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
-- **Developability**: two complementary aggregation scores — an SAP-style spatial
-  aggregation score (`sap_score`/`sap_total`) and an Aggrescan3D score
-  (`a3d_score`/`a3d_total_positive`, a faithful pure-Python port of Aggrescan3D
-  1.0.2's a3v scale + algorithm; Pearson r≈0.92 vs the reference tool) — plus
-  the ProtParam instability index (Guruprasad 1990), GRAVY, pI, MW, ε₂₈₀, and
-  sequence liabilities. Liabilities cover deamidation (N-[G/S/T]), Asp
-  isomerization (D-[G/S/T/D/H]), unpaired cysteines, N-glycosylation sequons,
-  and — SASA-aware, so only surface-exposed residues count — Met/Trp oxidation
-  hotspots.
+- **Developability**: two complementary aggregation scores, an SAP-style spatial
+  aggregation score (`sap_score`, `sap_total`) and an Aggrescan3D score
+  (`a3d_score`, `a3d_total_positive`, a faithful pure-Python port of Aggrescan3D
+  1.0.2's a3v scale and algorithm, Pearson r≈0.92 vs the reference tool). It also
+  reports the ProtParam instability index (Guruprasad 1990), GRAVY, pI, MW, and
+  ε₂₈₀. Sequence liabilities cover deamidation (N-[G/S/T]), Asp isomerization
+  (D-[G/S/T/D/H]), unpaired cysteines, N-glycosylation sequons, and Met/Trp
+  oxidation hotspots. The oxidation check is SASA-aware, so only surface-exposed
+  residues count.
 
-A `warnings` column flags problems (small, flat, anchorless, or glyco-occluded
-interfaces; buried, ambiguous, or interface-facing tag sites; hydrophobic sequences). `qc_pass` is
-true when there are no quality warnings (tag-site advisories like an ambiguous
-terminus do not count), and `--fasta` writes those binders.
+A `warnings` column flags problems: small, flat, anchorless, or glyco-occluded
+interfaces; buried, ambiguous, or interface-facing tag sites; hydrophobic
+sequences. `qc_pass` is true when there are no quality warnings (tag-site
+advisories like an ambiguous terminus do not count), and `--fasta` writes those
+binders.
 
 <details>
 <summary>Full column list</summary>
@@ -117,9 +120,9 @@ pip install -e ".[test]"
 pytest
 ```
 
-Runs against a bundled example, PDB 7JZU (the LCB1 minibinder on the SARS-CoV-2
-RBD). LCB1 comes from Cao et al. (2020), which frames the problem binderqc
-targets: the bottleneck is selecting good binders, not designing them.
+Tests run against a bundled example, PDB 7JZU (the LCB1 minibinder on the
+SARS-CoV-2 RBD). LCB1 comes from Cao et al. (2020), which frames the problem
+binderqc targets: the bottleneck is selecting good binders, not designing them.
 
 > "…not in the de novo design of proteins with shape and chemical complementarity
 > to the target surface, but in recognizing the best candidates."
@@ -131,7 +134,7 @@ polar contacts. See Cao et al., *De novo design of picomolar SARS-CoV-2
 miniprotein inhibitors*, Science 370, 426-431 (2020),
 [doi:10.1126/science.abd9909](https://doi.org/10.1126/science.abd9909).
 
-`tests/pisa_correctness.py` is a separate script (not part of the unit tests). It
+`tests/pisa_correctness.py` is a separate script, not part of the unit tests. It
 downloads 18 public complexes from RCSB and PDBePISA and checks the interface area
 against PISA (r ~ 1.0, about 1% median error):
 
@@ -142,10 +145,10 @@ python tests/pisa_correctness.py
 
 ## Figures
 
-The complex in the banner is a real render, not a drawing:
-`docs/render_structure.py` draws a cartoon under a translucent molecular surface
-(binder blue, target grey) from actual coordinates, using 3Dmol.js in headless
-Chromium. It works on any PDB/CIF, so it is reusable for your own figures:
+The complex in the banner is a real render, not a drawing. `docs/render_structure.py`
+draws a cartoon under a translucent molecular surface (binder blue, target grey)
+from actual coordinates, using 3Dmol.js in headless Chromium. It works on any
+PDB/CIF, so you can reuse it for your own figures:
 
 ```bash
 pip install -e ".[docs]" && python -m playwright install chromium
