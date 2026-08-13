@@ -86,7 +86,14 @@ Per binder chain:
 - **Developability**: two complementary aggregation scores, an SAP-style spatial
   aggregation score (`sap_score`, `sap_total`) and an Aggrescan3D score
   (`a3d_score`, `a3d_total_positive`, a faithful pure-Python port of Aggrescan3D
-  1.0.2's a3v scale and algorithm, Pearson r≈0.92 vs the reference tool). It also
+  1.0.2's a3v scale and algorithm, Pearson r≈0.92 vs the reference tool). Plus
+  TAP-style surface charge patches (Raybould et al. 2019): `charge_patch_pos` and
+  `charge_patch_neg` are the strongest exposed clusters of like charge, which net
+  charge and pI miss and which drive viscosity and self-association. Following TAP's
+  actual insight, the same idea is also computed over the binding region:
+  `paratope_hydrophobicity` and `paratope_charge` say whether the interface itself is
+  sticky or charge-clumped. These are reported numbers, not gates: TAP's thresholds
+  are calibrated on antibody Fv surfaces and do not transfer to minibinders. It also
   reports the ProtParam instability index (Guruprasad 1990), GRAVY, pI, MW, and
   ε₂₈₀. Sequence liabilities cover deamidation (N-[G/S/T]), Asp isomerization
   (D-[G/S/T/D/H]), unpaired cysteines, N-glycosylation sequons, and Met/Trp
@@ -110,7 +117,8 @@ nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
 cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface,
 cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi,
 instability_index, ext_coeff_280, sap_score, sap_total, a3d_score,
-a3d_total_positive, sequence_liabilities, warnings, qc_pass, binder_sequence`
+a3d_total_positive, charge_patch_pos, charge_patch_neg, paratope_hydrophobicity,
+paratope_charge, sequence_liabilities, warnings, qc_pass, binder_sequence`
 </details>
 
 ## Tests

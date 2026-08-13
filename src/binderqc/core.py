@@ -610,6 +610,91 @@ def _a3d_score(binder_sub, binder_iso_sasa, max_dist=10.0):
     return float(np.max(agg_fin)), float(np.sum(np.clip(agg_fin, 0.0, None)))
 
 
+_POS_RES = {"ARG", "LYS"}
+_NEG_RES = {"ASP", "GLU"}
+
+
+def _charge_patches(binder_sub, binder_iso_sasa, radius=10.0):
+    """TAP-style surface charge patches (Raybould 2019) on the ISOLATED binder. Per
+    residue, sum the SASA-weighted formal charge over residues whose Cbeta is within
+    `radius`, keeping the positive and negative sides separate so a basic cluster is
+    not cancelled by a nearby acidic one.
+
+    Returns (pos_patch, neg_patch), both >= 0: the strongest exposed positive and
+    negative charge cluster, i.e. an effective count of exposed R/K (resp. D/E) packed
+    within `radius`. Clustered like-charge on the surface drives viscosity and
+    self-association, which net charge / pI and salt-bridge counts miss. Charges are
+    R/K (+1) and D/E (-1); His is left neutral (only ~10% protonated at pH 7.4).
+
+    Thresholds are deliberately not baked in: TAP's amber/red cutoffs are calibrated on
+    antibody Fv surfaces and do not transfer to de-novo minibinders, so this is a
+    reported number like sap_score, not a gate."""
+    sub = binder_sub
+    if len(sub) == 0:
+        return float("nan"), float("nan")
+    res_sasa = struc.apply_residue_wise(sub, binder_iso_sasa, np.sum)
+    starts = struc.get_residue_starts(sub)
+    pos, neg, coords = [], [], []
+    for k, s in enumerate(starts):
+        name3 = str(sub.res_name[s])
+        ref = _REF_MAX_ASA.get(name3, 0.0)
+        rel = (res_sasa[k] / ref) if ref > 0 else 0.0
+        rid = int(sub.res_id[s])
+        m_cb = (sub.res_id == rid) & (sub.atom_name == "CB")
+        m_ca = (sub.res_id == rid) & (sub.atom_name == "CA")
+        c = sub.coord[m_cb][0] if m_cb.any() else (sub.coord[m_ca][0] if m_ca.any() else None)
+        if c is None:
+            continue
+        pos.append(rel if name3 in _POS_RES else 0.0)
+        neg.append(rel if name3 in _NEG_RES else 0.0)
+        coords.append(c)
+    if len(coords) < 1:
+        return float("nan"), float("nan")
+    coords = np.array(coords)
+    within = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=-1) <= radius
+    return float(np.max(within @ np.array(pos))), float(np.max(within @ np.array(neg)))
+
+
+def _paratope_patches(binder_sub, binder_iso_sasa, interface_ids, reach=10.0):
+    """Interface-aware version of the patch idea, which is TAP's actual move: score the
+    binding region, not the whole surface. Over binder residues within `reach` (Cbeta)
+    of a paratope (interface) residue, sum the SASA-weighted Black-Mould hydrophobicity
+    (shifted so Gly=0) and the SASA-weighted net formal charge.
+
+    Returns (hydrophobicity, net_charge): how sticky and how charge-clumped the
+    interface neighbourhood is. hydrophobicity is a positive load like sap_total but
+    localised to the paratope (only residues more hydrophobic than Gly count);
+    net_charge is signed (>0 basic paratope, <0 acidic). NaN if there is no interface."""
+    sub = binder_sub
+    if len(sub) == 0 or not interface_ids:
+        return float("nan"), float("nan")
+    res_sasa = struc.apply_residue_wise(sub, binder_iso_sasa, np.sum)
+    starts = struc.get_residue_starts(sub)
+    gly = _BLACK_MOULD["G"]
+    hyd, chg, coords, is_paratope = [], [], [], []
+    for k, s in enumerate(starts):
+        name3 = str(sub.res_name[s])
+        ref = _REF_MAX_ASA.get(name3, 0.0)
+        rel = (res_sasa[k] / ref) if ref > 0 else 0.0
+        rid = int(sub.res_id[s])
+        m_cb = (sub.res_id == rid) & (sub.atom_name == "CB")
+        m_ca = (sub.res_id == rid) & (sub.atom_name == "CA")
+        c = sub.coord[m_cb][0] if m_cb.any() else (sub.coord[m_ca][0] if m_ca.any() else None)
+        if c is None:
+            continue
+        one = _THREE_TO_ONE.get(name3, "X")
+        hyd.append(max(0.0, rel * (_BLACK_MOULD.get(one, gly) - gly)))   # hydrophobic load, >= 0
+        chg.append(rel * (1.0 if name3 in _POS_RES else -1.0 if name3 in _NEG_RES else 0.0))
+        coords.append(c)
+        is_paratope.append(rid in interface_ids)
+    if not any(is_paratope):
+        return float("nan"), float("nan")
+    coords, hyd, chg = np.array(coords), np.array(hyd), np.array(chg)
+    pcoords = coords[np.array(is_paratope)]
+    near = (np.linalg.norm(coords[:, None, :] - pcoords[None, :, :], axis=-1) <= reach).any(axis=1)
+    return float(hyd[near].sum()), float(chg[near].sum())
+
+
 def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, chain_lens,
                         relsasa, interface_cutoff, exposure_cutoff):
     ordered_ids = _chain_res_ids(array, binder_chain)
@@ -665,6 +750,8 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     liabilities_str = "; ".join(liabilities)
     sap, sap_total = _sap_score(binder_sub, binder_iso_sasa)
     a3d_peak, a3d_total = _a3d_score(binder_sub, binder_iso_sasa)
+    charge_patch_pos, charge_patch_neg = _charge_patches(binder_sub, binder_iso_sasa)
+    paratope_hyd, paratope_chg = _paratope_patches(binder_sub, binder_iso_sasa, interface_ids)
 
     # quality warnings say the binder/interface itself looks bad; tag-site
     # warnings are only about where to put a tag. qc_pass ignores the latter.
@@ -740,6 +827,10 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "sap_total": round(sap_total, 2) if np.isfinite(sap_total) else float("nan"),
         "a3d_score": round(a3d_peak, 3) if np.isfinite(a3d_peak) else float("nan"),
         "a3d_total_positive": round(a3d_total, 3) if np.isfinite(a3d_total) else float("nan"),
+        "charge_patch_pos": round(charge_patch_pos, 2) if np.isfinite(charge_patch_pos) else float("nan"),
+        "charge_patch_neg": round(charge_patch_neg, 2) if np.isfinite(charge_patch_neg) else float("nan"),
+        "paratope_hydrophobicity": round(paratope_hyd, 2) if np.isfinite(paratope_hyd) else float("nan"),
+        "paratope_charge": round(paratope_chg, 2) if np.isfinite(paratope_chg) else float("nan"),
         "sequence_liabilities": liabilities_str,
         "warnings": "; ".join(warnings),
         "qc_pass": qc_pass,

@@ -26,6 +26,7 @@ EXPECTED_COLUMNS = {
     "cterm_orientation", "cterm_sg_sasa",
     "recommended_tag", "mw", "gravy", "pi", "instability_index", "ext_coeff_280", "sap_score", "sap_total",
     "a3d_score", "a3d_total_positive",
+    "charge_patch_pos", "charge_patch_neg", "paratope_hydrophobicity", "paratope_charge",
     "sequence_liabilities", "warnings", "qc_pass", "binder_sequence",
 }
 
@@ -195,6 +196,41 @@ def test_interface_and_aggregation_metrics(row):
     # and the whole-surface total is >= the single hottest spot.
     assert row["a3d_score"] > 0
     assert row["a3d_total_positive"] >= row["a3d_score"]
+
+
+def test_charge_and_paratope_patches(row):
+    # TAP-style patches: both charge patches are non-negative magnitudes, and the
+    # paratope-vicinity metrics are finite because LCB1 has a real interface.
+    assert row["charge_patch_pos"] >= 0.0
+    assert row["charge_patch_neg"] >= 0.0
+    # LCB1 is acidic (pI 4.17), so its surface carries more exposed D/E than R/K.
+    assert row["charge_patch_neg"] >= row["charge_patch_pos"]
+    assert row["paratope_hydrophobicity"] >= 0.0            # a load, like sap_total
+    assert math.isfinite(row["paratope_charge"])            # signed: >0 basic, <0 acidic
+
+
+def test_charge_patches_keep_pos_and_neg_separate():
+    # Three exposed Lys clustered within 10 A, one Asp far away: the positive patch
+    # sums all three K's (~3), the negative patch sees only the lone D (~1), and the
+    # basic cluster is NOT cancelled by the distant acid.
+    import numpy as np
+    import biotite.structure as struc
+    from binderqc.core import _charge_patches, _REF_MAX_ASA
+
+    def cb(rid, name, xyz):
+        return struc.Atom(xyz, chain_id="A", res_id=rid, res_name=name,
+                          atom_name="CB", element="C")
+    arr = struc.array([
+        cb(1, "LYS", [0.0, 0.0, 0.0]),
+        cb(2, "LYS", [3.0, 0.0, 0.0]),
+        cb(3, "LYS", [0.0, 3.0, 0.0]),
+        cb(4, "ASP", [50.0, 0.0, 0.0]),
+    ])
+    # feed a SASA that makes each residue fully exposed (relSASA = 1.0)
+    iso = np.array([_REF_MAX_ASA["LYS"]] * 3 + [_REF_MAX_ASA["ASP"]])
+    pos, neg = _charge_patches(arr, iso, radius=10.0)
+    assert abs(pos - 3.0) < 1e-6
+    assert abs(neg - 1.0) < 1e-6
 
 
 def test_qc_pass_ignores_tag_site_warnings(row):
