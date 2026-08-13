@@ -27,6 +27,8 @@ import numpy as np
 import biotite.structure as struc
 import biotite.structure.io as strucio
 
+from ._diwv import instability_index
+
 _THREE_TO_ONE = {
     "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
     "GLU": "E", "GLN": "Q", "GLY": "G", "HIS": "H", "ILE": "I",
@@ -100,15 +102,14 @@ def _sg_sasa(array, atom_sasa, chain_id, res_id):
     return float(atom_sasa[mask][0]) if mask.any() else float("nan")
 
 
-def _binder_bsa(array, atom_sasa, binder_chain):
+def _binder_bsa(atom_sasa, binder_mask, binder_iso_sasa):
     """Area the binder buries on binding = its SASA alone minus its SASA in the
     complex. A tiny interface is the clearest tell of a junk binder. No PLIP,
-    just biotite SASA."""
-    mask = array.chain_id == binder_chain
-    if not mask.any():
+    just biotite SASA. Takes the isolated-binder SASA precomputed (shared with
+    SAP/A3D so it is only run once)."""
+    if not binder_mask.any():
         return float("nan")
-    iso = np.nan_to_num(struc.sasa(array[mask]), nan=0.0)
-    buried = np.clip(iso - atom_sasa[mask], 0.0, None).sum()
+    buried = np.clip(binder_iso_sasa - atom_sasa[binder_mask], 0.0, None).sum()
     return float(buried)
 
 
@@ -187,7 +188,9 @@ def _sequence_liabilities(seq):
     if re.search(r"N[^P][ST]", seq):
         flags.append("N-glycosylation sequon (NxS/T)")
     if re.search(r"N[GST]", seq):
-        flags.append("deamidation/isomerization motif (NG/NS/NT)")
+        flags.append("deamidation motif (NG/NS/NT)")
+    if re.search(r"D[GSTDH]", seq):
+        flags.append("Asp isomerization motif (D-[G/S/T/D/H])")
     if re.search(r"[KR]{3,}", seq):
         flags.append("polybasic run (>=3 K/R): proteolysis")
     if re.search(r"[AILMFWV]{6,}", seq):
@@ -336,16 +339,37 @@ def _isoelectric_point(seq):
     return (lo + hi) / 2.0
 
 
+def _exposed_oxidation(array, binder_chain, relsasa, cut=0.30):
+    """Solvent-exposed Met/Trp on the binder (oxidation-prone). Exposure is over the
+    complex, so a residue buried at the interface is not flagged. Adaptyv skill motif."""
+    starts = struc.get_residue_starts(array)
+    sites = []
+    for s in starts:
+        if str(array.chain_id[s]) != binder_chain:
+            continue
+        nm = str(array.res_name[s])
+        if nm in ("MET", "TRP"):
+            rel = relsasa.get((array.chain_id[s], int(array.res_id[s])), float("nan"))
+            if rel == rel and rel >= cut:
+                sites.append(f"{_THREE_TO_ONE[nm]}{int(array.res_id[s])}")
+    return sites
+
+
 def _sequence_metrics(seq):
     """Sequence-derived row fields (developability + expression), pre-rounded."""
     pp = _protparam(seq)
     gravy = _gravy(seq)
+    ii = instability_index(seq)
+    libs = _sequence_liabilities(seq)
+    if np.isfinite(ii) and ii > 40:
+        libs.append(f"unstable (instability index {ii:.0f} > 40)")
     return {
         "mw": round(pp["mw"], 1) if np.isfinite(pp["mw"]) else float("nan"),
         "gravy": round(gravy, 3) if np.isfinite(gravy) else float("nan"),
         "pi": round(_isoelectric_point(seq), 2) if seq else float("nan"),
+        "instability_index": round(ii, 1) if np.isfinite(ii) else float("nan"),
         "ext_coeff_280": pp["ext_coeff_280"],
-        "sequence_liabilities": "; ".join(_sequence_liabilities(seq)),
+        "sequence_liabilities": libs,   # list; joined by the caller after adding SASA-based flags
         "binder_sequence": seq,
     }
 
@@ -475,7 +499,7 @@ def _interface_packing(array, binder_chain, target_chains, binder_bsa, cutoff=4.
     return 100.0 * n / binder_bsa
 
 
-def _sap_score(array, binder_chain, radius=10.0):
+def _sap_score(binder_sub, binder_iso_sasa, radius=10.0):
     """Static-structure Spatial Aggregation Propensity (Chennamsetty 2009) on the
     ISOLATED binder. Per residue: sum, over residues whose Cbeta is within `radius`,
     of (relative SASA x Black-Mould hydrophobicity shifted so Gly=0).
@@ -488,11 +512,10 @@ def _sap_score(array, binder_chain, radius=10.0):
     Simplifications vs the original: single-structure SASA (no MD average) and
     whole-residue relative SASA (Tien max-ASA) instead of side-chain SAA vs an
     Ala-X-Ala reference."""
-    sub = array[array.chain_id == binder_chain]
+    sub = binder_sub
     if len(sub) == 0:
         return float("nan"), float("nan")
-    sasa = np.nan_to_num(struc.sasa(sub), nan=0.0)
-    res_sasa = struc.apply_residue_wise(sub, sasa, np.sum)
+    res_sasa = struc.apply_residue_wise(sub, binder_iso_sasa, np.sum)
     starts = struc.get_residue_starts(sub)
     gly = _BLACK_MOULD["G"]
     contrib, coords = [], []
@@ -530,7 +553,7 @@ _A3V = {
 }
 
 
-def _a3d_score(array, binder_chain, max_dist=10.0):
+def _a3d_score(binder_sub, binder_iso_sasa, max_dist=10.0):
     """Aggrescan3D score (Zambrano 2015), ported faithfully from Aggrescan3D 1.0.2,
     on the ISOLATED binder. Per residue (CA as centre):
 
@@ -553,11 +576,10 @@ def _a3d_score(array, binder_chain, max_dist=10.0):
     Pearson r=0.92, mean port/real ratio 0.95. Complements SAP (which uses a
     hydrophobicity scale + patch sum); A3D is calibrated on aggregation data and
     thresholds out buried residues."""
-    sub = array[array.chain_id == binder_chain]
+    sub = binder_sub
     if len(sub) == 0:
         return float("nan"), float("nan")
-    sasa = np.nan_to_num(struc.sasa(sub), nan=0.0)
-    res_sasa = struc.apply_residue_wise(sub, sasa, np.sum)
+    res_sasa = struc.apply_residue_wise(sub, binder_iso_sasa, np.sum)
     starts = struc.get_residue_starts(sub)
     agg_sup, coords = [], []
     for k, s in enumerate(starts):
@@ -601,7 +623,10 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         return str(array.res_name[m][0]) if m.any() else ""
 
     interface_ids = _interface_residue_ids(array, binder_chain, target_chains, interface_cutoff)
-    binder_bsa = _binder_bsa(array, atom_sasa, binder_chain)
+    binder_mask = array.chain_id == binder_chain
+    binder_sub = array[binder_mask]
+    binder_iso_sasa = np.nan_to_num(struc.sasa(binder_sub), nan=0.0)  # once; shared by BSA/SAP/A3D
+    binder_bsa = _binder_bsa(atom_sasa, binder_mask, binder_iso_sasa)
     n_hbonds = _count_interface_hbonds(array, binder_chain, target_chains)
     n_salt_bridges = _count_salt_bridges(array, binder_chain, target_chains)
     interface_packing = _interface_packing(array, binder_chain, target_chains, binder_bsa)
@@ -633,8 +658,13 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     # sequence-side developability + expression
     binder_seq = _binder_sequence(array, binder_chain)
     seqm = _sequence_metrics(binder_seq)
-    sap, sap_total = _sap_score(array, binder_chain)
-    a3d_peak, a3d_total = _a3d_score(array, binder_chain)
+    ox_sites = _exposed_oxidation(array, binder_chain, relsasa)
+    liabilities = list(seqm["sequence_liabilities"])
+    if ox_sites:
+        liabilities.append("solvent-exposed Met/Trp (oxidation): " + ", ".join(ox_sites))
+    liabilities_str = "; ".join(liabilities)
+    sap, sap_total = _sap_score(binder_sub, binder_iso_sasa)
+    a3d_peak, a3d_total = _a3d_score(binder_sub, binder_iso_sasa)
 
     # quality warnings say the binder/interface itself looks bad; tag-site
     # warnings are only about where to put a tag. qc_pass ignores the latter.
@@ -704,12 +734,13 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "mw": seqm["mw"],
         "gravy": seqm["gravy"],
         "pi": seqm["pi"],
+        "instability_index": seqm["instability_index"],
         "ext_coeff_280": seqm["ext_coeff_280"],
         "sap_score": round(sap, 2) if np.isfinite(sap) else float("nan"),
         "sap_total": round(sap_total, 2) if np.isfinite(sap_total) else float("nan"),
         "a3d_score": round(a3d_peak, 3) if np.isfinite(a3d_peak) else float("nan"),
         "a3d_total_positive": round(a3d_total, 3) if np.isfinite(a3d_total) else float("nan"),
-        "sequence_liabilities": seqm["sequence_liabilities"],
+        "sequence_liabilities": liabilities_str,
         "warnings": "; ".join(warnings),
         "qc_pass": qc_pass,
         "binder_sequence": seqm["binder_sequence"],

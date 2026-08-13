@@ -48,7 +48,11 @@ guess the binder as the shortest chain (20-250 aa, printed for each file);
 | `--interface-cutoff` | `5.0` | heavy-atom contact distance (Å) |
 | `--exposure-cutoff` | `0.25` | relSASA below which a terminus is buried |
 | `--out` | `binderqc.csv` | output CSV path |
+| `-j`, `--jobs` | `1` | worker processes to score a batch of files in parallel |
 | `--fasta` | off | also write the QC-passing binders to this FASTA |
+
+Scoring is CPU-only (no folding, no GPU, no network). Files in a batch are
+independent, so `-j` scales near-linearly across cores for large directories.
 
 Example output for the bundled LCB1 minibinder (a few of the columns):
 
@@ -81,7 +85,11 @@ Per binder chain:
   aggregation score (`sap_score`/`sap_total`) and an Aggrescan3D score
   (`a3d_score`/`a3d_total_positive`, a faithful pure-Python port of Aggrescan3D
   1.0.2's a3v scale + algorithm; Pearson r≈0.92 vs the reference tool) — plus
-  sequence liabilities, GRAVY, pI, MW, ε₂₈₀.
+  the ProtParam instability index (Guruprasad 1990), GRAVY, pI, MW, ε₂₈₀, and
+  sequence liabilities. Liabilities cover deamidation (N-[G/S/T]), Asp
+  isomerization (D-[G/S/T/D/H]), unpaired cysteines, N-glycosylation sequons,
+  and — SASA-aware, so only surface-exposed residues count — Met/Trp oxidation
+  hotspots.
 
 A `warnings` column flags problems (small, flat, anchorless, or glyco-occluded
 interfaces; buried, ambiguous, or interface-facing tag sites; hydrophobic sequences). `qc_pass` is
@@ -97,9 +105,9 @@ epitope_hydrophobic_frac, epitope_aromatic_n, epitope_glyco_occluded,
 epitope_glyco_sites, nterm_resnum, nterm_resname,
 nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
 cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface,
-cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi, ext_coeff_280,
-sap_score, sap_total, a3d_score, a3d_total_positive, sequence_liabilities,
-warnings, qc_pass, binder_sequence`
+cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi,
+instability_index, ext_coeff_280, sap_score, sap_total, a3d_score,
+a3d_total_positive, sequence_liabilities, warnings, qc_pass, binder_sequence`
 </details>
 
 ## Tests
@@ -130,6 +138,18 @@ against PISA (r ~ 1.0, about 1% median error):
 ```bash
 pip install -e ".[validation]"
 python tests/pisa_correctness.py
+```
+
+## Figures
+
+The complex in the banner is a real render, not a drawing:
+`docs/render_structure.py` draws a cartoon under a translucent molecular surface
+(binder blue, target grey) from actual coordinates, using 3Dmol.js in headless
+Chromium. It works on any PDB/CIF, so it is reusable for your own figures:
+
+```bash
+pip install -e ".[docs]" && python -m playwright install chromium
+python docs/render_structure.py complex.pdb A B out.png   # structure, binder chain, target chain, output
 ```
 
 ## License

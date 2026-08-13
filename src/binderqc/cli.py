@@ -13,6 +13,17 @@ import sys
 from .core import score_structure, grippability_consensus
 from .paths import gather_paths
 
+
+def _score_one(task):
+    """Worker: score one file, returning rows (or a one-row error). Top-level so it
+    is picklable for the process pool."""
+    path, binder_chains, target_chains, interface_cutoff, exposure_cutoff, verbose = task
+    try:
+        return score_structure(path, binder_chains, target_chains,
+                               interface_cutoff, exposure_cutoff, verbose=verbose)
+    except Exception as e:  # noqa: BLE001 - keep the batch going, record the failure
+        return [{"pdb": path, "error": str(e)}]
+
 _DESCRIPTION = """\
 Pick the terminus to tag on a designed protein binder.
 
@@ -38,6 +49,8 @@ def main(argv=None):
     ap.add_argument("--exposure-cutoff", type=float, default=0.25,
                     help="relSASA below which a terminus is buried (default 0.25)")
     ap.add_argument("--out", default="binderqc.csv", help="output CSV path")
+    ap.add_argument("-j", "--jobs", type=int, default=1,
+                    help="parallel worker processes over a batch of files (default 1)")
     ap.add_argument("--fasta", default="",
                     help="also write QC-passing binders (no quality warnings) to this FASTA path")
     ap.add_argument("--iara-score", type=float, default=None,
@@ -54,13 +67,18 @@ def main(argv=None):
     binder_chains = [c for c in args.binder_chains.split(",") if c]
     target_chains = [c for c in args.target_chains.split(",") if c]
 
+    verbose = args.jobs <= 1  # auto-guess printout only makes sense when sequential
+    tasks = [(p, binder_chains, target_chains, args.interface_cutoff, args.exposure_cutoff, verbose)
+             for p in paths]
     rows = []
-    for p in paths:
-        try:
-            rows.extend(score_structure(p, binder_chains, target_chains,
-                                        args.interface_cutoff, args.exposure_cutoff))
-        except Exception as e:  # noqa: BLE001 - keep the batch going, record the failure
-            rows.append({"pdb": p, "error": str(e)})
+    if args.jobs > 1 and len(tasks) > 1:
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=args.jobs) as ex:
+            for res in ex.map(_score_one, tasks):   # map preserves input order
+                rows.extend(res)
+    else:
+        for t in tasks:
+            rows.extend(_score_one(t))
 
     # Optional: fold in a learned target-side grippability (e.g. IARA epitope mean,
     # computed by the caller so binderqc stays dependency- and license-clean) and

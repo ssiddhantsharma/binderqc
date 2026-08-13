@@ -24,7 +24,7 @@ EXPECTED_COLUMNS = {
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
-    "recommended_tag", "mw", "gravy", "pi", "ext_coeff_280", "sap_score", "sap_total",
+    "recommended_tag", "mw", "gravy", "pi", "instability_index", "ext_coeff_280", "sap_score", "sap_total",
     "a3d_score", "a3d_total_positive",
     "sequence_liabilities", "warnings", "qc_pass", "binder_sequence",
 }
@@ -95,6 +95,16 @@ def test_sequence_liabilities_is_a_string(row):
 def test_expression_signals_in_range(row):
     assert -4.5 <= row["gravy"] <= 4.5              # Kyte-Doolittle bounds
     assert 0.0 <= row["pi"] <= 14.0
+    assert -20.0 <= row["instability_index"] <= 250.0   # ProtParam II (Guruprasad 1990)
+
+
+def test_instability_index_formula():
+    # II = 10/L * sum of dipeptide DIWV weights (Guruprasad 1990) -- check against the matrix
+    from binderqc._diwv import instability_index, DIWV
+    seq = "MKLVN"
+    expected = 10.0 / len(seq) * sum(DIWV[seq[i]][seq[i + 1]] for i in range(len(seq) - 1))
+    assert abs(instability_index(seq) - expected) < 1e-9
+    assert instability_index("") != instability_index("")   # NaN for empty
 
 
 def test_charge_and_pi_logic():
