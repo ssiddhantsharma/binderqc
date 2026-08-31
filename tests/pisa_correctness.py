@@ -22,14 +22,15 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import numpy as np
 import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from scipy.stats import pearsonr, spearmanr, linregress
-import biotite.structure as struc
+import numpy as np
 
-from binderqc.core import _load_protein, _chain_lengths
+matplotlib.use("Agg")
+import biotite.structure as struc
+import matplotlib.pyplot as plt
+from scipy.stats import linregress, pearsonr, spearmanr
+
+from binderqc.core import _chain_lengths, _load_protein
 
 HERE = Path(__file__).parent
 PDBS = ["2PTC", "3SGB", "1PPF", "1CHO", "1ACB", "1DFJ", "1EMV", "1FSS", "1CSE",

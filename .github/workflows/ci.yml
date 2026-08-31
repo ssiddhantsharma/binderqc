@@ -18,4 +18,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[test]"
+      - run: pip install ruff
+      - run: ruff check .
       - run: pytest -q

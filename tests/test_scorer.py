@@ -101,7 +101,7 @@ def test_expression_signals_in_range(row):
 
 def test_instability_index_formula():
     # II = 10/L * sum of dipeptide DIWV weights (Guruprasad 1990) -- check against the matrix
-    from binderqc._diwv import instability_index, DIWV
+    from binderqc._diwv import DIWV, instability_index
     seq = "MKLVN"
     expected = 10.0 / len(seq) * sum(DIWV[seq[i]][seq[i + 1]] for i in range(len(seq) - 1))
     assert abs(instability_index(seq) - expected) < 1e-9
@@ -110,7 +110,7 @@ def test_instability_index_formula():
 
 def test_charge_and_pi_logic():
     # Polybasic -> high pI + positive charge; polyacidic -> low pI + negative.
-    from binderqc.core import _net_charge, _isoelectric_point
+    from binderqc.core import _isoelectric_point, _net_charge
     assert _isoelectric_point("K" * 10) > 9.0
     assert _isoelectric_point("E" * 10) < 5.0
     assert _net_charge("K" * 10) > 0
@@ -175,8 +175,9 @@ def test_missing_binder_chain_returns_error_row_not_crash():
 def test_nonstandard_residue_relsasa_is_nan():
     # A residue absent from the Tien reference table must yield NaN relSASA,
     # never 0 -- the "unknown, don't guess" contract.
-    import numpy as np
     import biotite.structure as struc
+    import numpy as np
+
     from binderqc.core import _residue_relsasa
 
     atom = struc.Atom([0.0, 0.0, 0.0], chain_id="A", res_id=1,
@@ -213,9 +214,10 @@ def test_charge_patches_keep_pos_and_neg_separate():
     # Three exposed Lys clustered within 10 A, one Asp far away: the positive patch
     # sums all three K's (~3), the negative patch sees only the lone D (~1), and the
     # basic cluster is NOT cancelled by the distant acid.
-    import numpy as np
     import biotite.structure as struc
-    from binderqc.core import _charge_patches, _REF_MAX_ASA
+    import numpy as np
+
+    from binderqc.core import _REF_MAX_ASA, _charge_patches
 
     def cb(rid, name, xyz):
         return struc.Atom(xyz, chain_id="A", res_id=rid, res_name=name,

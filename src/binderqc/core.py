@@ -23,9 +23,9 @@ no network.
 import os
 import re
 
-import numpy as np
 import biotite.structure as struc
 import biotite.structure.io as strucio
+import numpy as np
 
 from ._diwv import instability_index
 
@@ -88,7 +88,7 @@ def _residue_relsasa(array, atom_sasa):
     res_sasa = struc.apply_residue_wise(array, atom_sasa, np.sum)
     res_starts = struc.get_residue_starts(array)
     rel = {}
-    for res_total, start in zip(res_sasa, res_starts):
+    for res_total, start in zip(res_sasa, res_starts, strict=True):
         ref = _REF_MAX_ASA.get(array.res_name[start], 0.0)
         rel[(array.chain_id[start], int(array.res_id[start]))] = (
             (res_total / ref) if ref > 0 else float("nan")
@@ -285,7 +285,7 @@ def _glyco_occluded_epitope(array, target_chains, target_iface,
     tres = struc.apply_residue_wise(tarr, tsasa, np.sum)
     tstarts = struc.get_residue_starts(tarr)
     trel = {}
-    for tot, st in zip(tres, tstarts):
+    for tot, st in zip(tres, tstarts, strict=True):
         ref = _REF_MAX_ASA.get(tarr.res_name[st], 0.0)
         trel[(str(tarr.chain_id[st]), int(tarr.res_id[st]))] = (tot / ref) if ref > 0 else float("nan")
 
@@ -300,7 +300,7 @@ def _glyco_occluded_epitope(array, target_chains, target_iface,
             if ni != "ASN" or nj == "PRO" or nl not in ("SER", "THR"):
                 continue
             rel = trel.get((str(chain), i), 0.0)
-            if not (rel == rel) or rel < expose_cut:            # nan or buried -> not glycosylated
+            if rel != rel or rel < expose_cut:            # nan or buried -> not glycosylated
                 continue
             ca = _ca_coord(array, chain, i)
             if ca is None:
@@ -394,7 +394,7 @@ def _target_interface_res(array, binder_chain, target_chains, cutoff):
         chunk = t_coord[i : i + 2048]
         d = np.linalg.norm(chunk[:, None, :] - b_coord[None, :, :], axis=-1)
         hit = d.min(axis=1) <= cutoff
-        for ch, rr, h in zip(t_chain[i : i + 2048], t_resid[i : i + 2048], hit):
+        for ch, rr, h in zip(t_chain[i : i + 2048], t_resid[i : i + 2048], hit, strict=True):
             if h:
                 hits.add((str(ch), int(rr)))
     return sorted(hits)
@@ -473,7 +473,7 @@ def _count_salt_bridges(array, binder_chain, target_chains, cutoff=4.0):
     tset = set(target_chains)
     d = np.linalg.norm(array.coord[cat][:, None, :] - array.coord[ani][None, :, :], axis=-1)
     pairs = set()
-    for ci, ai in zip(*np.where(d <= cutoff)):
+    for ci, ai in zip(*np.where(d <= cutoff), strict=True):
         gc, ga = cat[ci], ani[ai]
         chc, cha = str(array.chain_id[gc]), str(array.chain_id[ga])
         if (chc == binder_chain and cha in tset) or (cha == binder_chain and chc in tset):
@@ -591,10 +591,7 @@ def _a3d_score(binder_sub, binder_iso_sasa, max_dist=10.0):
         if aa not in _A3V or not m_ca.any():
             continue
         rsa = 100.0 * (res_sasa[k] / ref) if ref > 0 else 0.0     # relative SASA, percent
-        if rsa < 10.0:
-            sup = 0.0
-        else:
-            sup = _A3V[aa] * 0.0599 * np.exp(0.0521 * min(rsa, 55.0))
+        sup = 0.0 if rsa < 10.0 else _A3V[aa] * 0.0599 * np.exp(0.0521 * min(rsa, 55.0))
         agg_sup.append(sup)
         coords.append(sub.coord[m_ca][0])
     if len(coords) < 1:

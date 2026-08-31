@@ -3,11 +3,13 @@ render_structure.py) on the left, the binderqc QC-output flow on the right.
 Run: python docs/render_structure.py && python docs/make_schematic.py
 """
 import os
-import numpy as np
+
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch, Circle, FancyArrowPatch
+from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch
 
 TEAL, GREY, INK, SUB = "#2f6fb0", "#9aa0a6", "#1a2b34", "#5b6b73"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -51,7 +53,7 @@ rows = [
     ("4", "Tag site", "recommended N / C terminus · Cys-SG"),
     ("5", "Developability", "SAP / Aggrescan3D · liabilities · GRAVY · pI · MW"),
 ]
-for (num, title, sub), y in zip(rows, np.linspace(0.86, 0.14, len(rows))):
+for (num, title, sub), y in zip(rows, np.linspace(0.86, 0.14, len(rows)), strict=True):
     fx.add_patch(Circle((0.665, y), 0.022, facecolor="#0f7d6b", linewidth=0))
     fx.text(0.665, y, num, ha="center", va="center", color="white", fontsize=10, fontweight="bold")
     fx.text(0.70, y + 0.03, title, ha="left", va="center", color=INK, fontsize=13, fontweight="bold")

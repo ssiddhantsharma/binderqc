@@ -10,7 +10,7 @@ import argparse
 import os
 import sys
 
-from .core import score_structure, grippability_consensus
+from .core import grippability_consensus, score_structure
 from .paths import gather_paths
 
 

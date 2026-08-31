@@ -1,6 +1,6 @@
 """Score binder termini for tag/conjugation suitability from predicted complexes."""
 
-from .core import score_structure, grippability_consensus
+from .core import grippability_consensus, score_structure
 from .paths import gather_paths
 
 __version__ = "0.2.0"

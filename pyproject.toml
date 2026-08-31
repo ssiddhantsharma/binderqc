@@ -35,3 +35,16 @@ Homepage = "https://github.com/ssiddhantsharma/binderqc"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/binderqc"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# F=pyflakes bugs, I=import-sort, B=bugbear footguns, SIM=simplify, UP=pyupgrade.
+# Omit full E: E501/E70x are style noise on the numeric/plotting code.
+select = ["F", "I", "B", "SIM", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# printf is correct here: the string is a JS/CSS template full of {} braces,
+# so an f-string / str.format conversion would break the template.
+"docs/render_structure.py" = ["UP031"]

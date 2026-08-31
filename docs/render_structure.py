@@ -55,7 +55,8 @@ const data = %s, fmt = %s, B = %s, T = %s;
         b.close()
     if err:
         raise SystemExit("render failed: " + err)
-    open(out_path, "wb").write(base64.b64decode(uri.split(",", 1)[1]))
+    with open(out_path, "wb") as fh:
+        fh.write(base64.b64decode(uri.split(",", 1)[1]))
     print("wrote", out_path)
 
 
