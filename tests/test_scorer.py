@@ -24,10 +24,10 @@ EXPECTED_COLUMNS = {
     "nterm_orientation", "nterm_sg_sasa",
     "cterm_resnum", "cterm_resname", "cterm_relsasa", "cterm_dist_to_interface",
     "cterm_orientation", "cterm_sg_sasa",
-    "recommended_tag", "mw", "gravy", "pi", "instability_index", "ext_coeff_280", "sap_score", "sap_total",
+    "recommended_tag", "mw", "gravy", "pi", "instability_index", "ext_coeff_280", "sap_score", "sap_total", "sap_per_res",
     "a3d_score", "a3d_total_positive",
     "charge_patch_pos", "charge_patch_neg", "paratope_hydrophobicity", "paratope_charge",
-    "sequence_liabilities", "warnings", "qc_pass", "binder_sequence",
+    "paratope_res", "sequence_liabilities", "warnings", "qc_pass", "binder_sequence",
 }
 
 

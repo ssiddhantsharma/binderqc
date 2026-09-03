@@ -50,6 +50,7 @@ guess the binder as the shortest chain (20-250 aa, printed for each file).
 | `--out` | `binderqc.csv` | output CSV path |
 | `-j`, `--jobs` | `1` | worker processes to score a batch of files in parallel |
 | `--fasta` | off | also write the QC-passing binders to this FASTA |
+| `--self-fold` | off | predicted binder homodimer(s), a file or a directory matched by filename stem: adds where the binder self-associates relative to its paratope |
 
 Scoring is CPU-only: no folding, no GPU, no network. Files in a batch are
 independent, so `-j` scales near-linearly across cores on large directories.
@@ -70,6 +71,16 @@ Per binder chain:
 - **Interface**: buried surface area, interface residue count, hydrogen-bond and
   salt-bridge counts, and a contact-packing density (a lightweight proxy for
   contact molecular surface).
+- **Self-association** (with `--self-fold`): given a predicted binder homodimer,
+  how much of the paratope the self-interface buries (`self_paratope_overlap_frac`)
+  and whether it is more than a patch that size would bury sitting anywhere on the
+  binder at random (`self_paratope_enrichment`). Interface PAE, ipTM and ipSAE say
+  whether a self-interface is predicted; they cannot say *where*. Self-association
+  away from the paratope is a formulation problem, self-association through it
+  competes with target binding. `self_verdict` bands the buried fraction at 0.5 and
+  0.2 — a stated convention, not a calibrated cutoff, since no dataset of de-novo
+  binders with measured self-association exists to fit one on.
+
 - **Pose**: approach angle (end-on vs. lying across the surface).
 - **Grippability**: epitope planarity, hydrophobic fraction, aromatic anchors, and
   a SASA-aware glyco-occlusion check (`epitope_glyco_occluded`,
@@ -84,7 +95,9 @@ Per binder chain:
 - **Tag site**: recommended terminus (N/C) and the numbers behind it: relative
   SASA, CA-CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
 - **Developability**: two complementary aggregation scores, an SAP-style spatial
-  aggregation score (`sap_score`, `sap_total`) and an Aggrescan3D score
+  aggregation score (`sap_score`, `sap_total`, and `sap_per_res` = load per residue,
+  since `sap_total` scales with chain length and the literature `SAP < 35` bar was
+  calibrated on 52-65 residue binders) and an Aggrescan3D score
   (`a3d_score`, `a3d_total_positive`, a faithful pure-Python port of Aggrescan3D
   1.0.2's a3v scale and algorithm, Pearson r≈0.92 vs the reference tool). Plus
   TAP-style surface charge patches (Raybould et al. 2019): `charge_patch_pos` and
@@ -116,9 +129,14 @@ epitope_glyco_sites, nterm_resnum, nterm_resname,
 nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
 cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface,
 cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi,
-instability_index, ext_coeff_280, sap_score, sap_total, a3d_score,
+instability_index, ext_coeff_280, sap_score, sap_total, sap_per_res, a3d_score,
 a3d_total_positive, charge_patch_pos, charge_patch_neg, paratope_hydrophobicity,
-paratope_charge, sequence_liabilities, warnings, qc_pass, binder_sequence`
+paratope_charge, paratope_res, sequence_liabilities, warnings, qc_pass,
+binder_sequence`
+
+With `--self-fold`, also `self_fold, self_bsa, self_n_interface_res,
+self_paratope_overlap_n, self_paratope_overlap_frac, self_paratope_enrichment,
+self_verdict, residues_matched`.
 </details>
 
 ## Tests

@@ -822,17 +822,97 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "ext_coeff_280": seqm["ext_coeff_280"],
         "sap_score": round(sap, 2) if np.isfinite(sap) else float("nan"),
         "sap_total": round(sap_total, 2) if np.isfinite(sap_total) else float("nan"),
+        "sap_per_res": (round(sap_total / len(ordered_ids), 3)
+                        if ordered_ids and np.isfinite(sap_total) else float("nan")),
         "a3d_score": round(a3d_peak, 3) if np.isfinite(a3d_peak) else float("nan"),
         "a3d_total_positive": round(a3d_total, 3) if np.isfinite(a3d_total) else float("nan"),
         "charge_patch_pos": round(charge_patch_pos, 2) if np.isfinite(charge_patch_pos) else float("nan"),
         "charge_patch_neg": round(charge_patch_neg, 2) if np.isfinite(charge_patch_neg) else float("nan"),
         "paratope_hydrophobicity": round(paratope_hyd, 2) if np.isfinite(paratope_hyd) else float("nan"),
         "paratope_charge": round(paratope_chg, 2) if np.isfinite(paratope_chg) else float("nan"),
+        "paratope_res": ",".join(str(r) for r in sorted(interface_ids)),
         "sequence_liabilities": liabilities_str,
         "warnings": "; ".join(warnings),
         "qc_pass": qc_pass,
         "binder_sequence": seqm["binder_sequence"],
     }
+
+
+def self_association(self_fold_path, row, self_chains=None, interface_cutoff=5.0):
+    """Where does the binder stick to itself, relative to where it binds the target?
+
+    Takes a predicted binder homodimer (two copies of the binder) plus a `row` from
+    score_structure for the same binder on its target, and reports how much of the
+    paratope the self-interface covers.
+
+    Interface PAE, ipTM and ipSAE all answer "is a self-interface predicted", never
+    "where". The distinction decides what to do about it: a binder that self-associates
+    away from the paratope is a formulation problem, one that self-associates through
+    the paratope competes with its own target binding.
+
+    Residue numbering in the homodimer must match the complex (it does if both came
+    from the same sequence); `residues_matched` is false when it does not.
+
+    Two numbers, because they answer different questions. overlap_frac is how much of
+    the paratope the self-interface buries - that is the one that decides whether target
+    binding is blocked. enrichment compares that overlap with what a self-interface of
+    the same size would bury sitting anywhere on the binder at random, so it says whether
+    the paratope is preferred (>1) or merely caught up in a large interface (~1).
+
+    The verdict bands the occluded fraction at 0.5 and 0.2. Those are stated conventions,
+    not calibrated cutoffs - there is no dataset of de-novo binders with measured
+    self-association to fit one on. Read the numbers.
+    """
+    array = _load_protein(self_fold_path)
+    chain_lens = _chain_lengths(array)
+    chains = list(self_chains) if self_chains else sorted(chain_lens)
+    if len(chains) != 2 or any(c not in chain_lens for c in chains):
+        return {"self_fold": os.path.basename(self_fold_path),
+                "error": f"need exactly two binder copies, got chains {chain_lens}"}
+    a, b = chains
+    seqs = [tuple(array.res_name[(array.chain_id == c) & (array.atom_name == "CA")]) for c in (a, b)]
+    if seqs[0] != seqs[1]:
+        return {"self_fold": os.path.basename(self_fold_path),
+                "error": f"chains {a}/{b} are not two copies of one sequence "
+                         f"({chain_lens[a]} vs {chain_lens[b]} residues) - this needs a homodimer"}
+
+    atom_sasa = np.nan_to_num(struc.sasa(array), nan=0.0)
+    a_mask = array.chain_id == a
+    a_iso_sasa = np.nan_to_num(struc.sasa(array[a_mask]), nan=0.0)
+    self_ids = _interface_residue_ids(array, a, [b], interface_cutoff)
+    self_bsa = _binder_bsa(atom_sasa, a_mask, a_iso_sasa)
+
+    paratope = {int(r) for r in str(row.get("paratope_res", "")).split(",") if r.strip()}
+    n_res = len(_chain_res_ids(array, a))
+    matched = bool(paratope) and paratope <= set(_chain_res_ids(array, a))
+
+    overlap = self_ids & paratope
+    frac = len(overlap) / len(paratope) if paratope else float("nan")
+    expected = len(self_ids) * len(paratope) / n_res if paratope and n_res else float("nan")
+    enrichment = len(overlap) / expected if expected else float("nan")
+
+    if not self_ids:
+        verdict, note = "no-self-interface", "no inter-copy contacts at this cutoff"
+    elif not matched:
+        verdict, note = "unknown", "paratope residue numbering absent from the homodimer"
+    else:
+        specific = "prefers the paratope" if enrichment > 1.2 else \
+                   ("avoids it" if enrichment < 0.8 else "no site preference")
+        verdict = ("paratope-occluding" if frac >= 0.5 else
+                   "paratope-partial" if frac >= 0.2 else "paratope-clear")
+        tail = {"paratope-occluding": "it competes with target binding",
+                "paratope-partial": "it eats into the binding surface",
+                "paratope-clear": "a formulation problem, not a binding one"}[verdict]
+        note = (f"self-association buries {frac:.0%} of the paratope "
+                f"({enrichment:.1f}x chance, {specific}) - {tail}")
+
+    return {"self_fold": os.path.basename(self_fold_path),
+            "self_bsa": round(self_bsa, 1) if np.isfinite(self_bsa) else float("nan"),
+            "self_n_interface_res": len(self_ids),
+            "self_paratope_overlap_n": len(overlap),
+            "self_paratope_overlap_frac": round(frac, 3) if frac == frac else float("nan"),
+            "self_paratope_enrichment": round(enrichment, 2) if enrichment == enrichment else float("nan"),
+            "self_verdict": verdict, "residues_matched": matched, "self_note": note}
 
 
 def grippability_consensus(row, iara_epitope_score=None):

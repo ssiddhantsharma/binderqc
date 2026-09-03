@@ -10,7 +10,7 @@ import argparse
 import os
 import sys
 
-from .core import grippability_consensus, score_structure
+from .core import grippability_consensus, score_structure, self_association
 from .paths import gather_paths
 
 
@@ -57,6 +57,10 @@ def main(argv=None):
                     help="learned target-side grippability of the epitope (0-100 mean hotspot "
                          "prob, e.g. from IARA); when given, adds a physical-vs-learned "
                          "grippability_consensus column (grippable/flat/disagree)")
+    ap.add_argument("--self-fold", default="",
+                    help="predicted binder homodimer(s): a file, or a directory matched to each "
+                         "input by filename stem. Adds where the binder self-associates relative "
+                         "to its paratope (self_verdict, self_paratope_enrichment)")
     args = ap.parse_args(argv)
 
     import pandas as pd  # imported here so `--help` works without pandas
@@ -91,9 +95,25 @@ def main(argv=None):
             r["iara_grippability"] = round(args.iara_score, 1)
             r["grippability_consensus"] = grippability_consensus(r, args.iara_score)["consensus"]
 
+    # Optional: given a predicted binder homodimer, say whether the self-interface sits on
+    # the paratope. Same contract as --iara-score: CLI output only, core schema untouched.
+    if args.self_fold:
+        folds = {os.path.splitext(os.path.basename(f))[0]: f
+                 for f in gather_paths([args.self_fold])}
+        for r in rows:
+            if "error" in r:
+                continue
+            stem = os.path.splitext(r["pdb"])[0]
+            hit = folds.get(stem) or next((f for k, f in folds.items() if k.startswith(stem)), None)
+            if hit is None:
+                r["self_verdict"] = "no-homodimer-supplied"
+                continue
+            r.update({k: v for k, v in self_association(hit, r, interface_cutoff=args.interface_cutoff).items()
+                      if k != "self_note"})
+
     df = pd.DataFrame(rows)
     df.to_csv(args.out, index=False)
-    shown = df.drop(columns=["binder_sequence"], errors="ignore")  # too wide to print
+    shown = df.drop(columns=["binder_sequence", "paratope_res"], errors="ignore")  # too wide to print
     with pd.option_context("display.max_columns", None, "display.width", 220):
         print(shown.to_string(index=False))
     print(f"\nWrote {len(df)} rows -> {args.out}")
