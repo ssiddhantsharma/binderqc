@@ -69,8 +69,11 @@ a tag-site advisory, so `qc_pass` stays `True`.
 Per binder chain:
 
 - **Interface**: buried surface area, interface residue count, hydrogen-bond and
-  salt-bridge counts, and a contact-packing density (a lightweight proxy for
-  contact molecular surface).
+  salt-bridge counts, buried unsatisfied polar atoms at the interface
+  (`buns_interface`, `interface_polar_satisfied_frac` — the signal that separates a
+  real H-bond-satisfied polar interface from a floppy one; Stranges & Kuhlman 2013,
+  Cao et al. 2022), and a contact-packing density (a lightweight proxy for contact
+  molecular surface).
 - **Self-association** (with `--self-fold`): given a predicted binder homodimer,
   how much of the paratope the self-interface buries (`self_paratope_overlap_frac`)
   and whether it is more than a patch that size would bury sitting anywhere on the
@@ -123,7 +126,7 @@ binders.
 <summary>Full column list</summary>
 
 `pdb, binder_chain, target_chains, n_interface_res, binder_bsa, n_hbonds,
-n_salt_bridges, interface_packing, approach_angle, epitope_planarity,
+n_salt_bridges, buns_interface, interface_polar_satisfied_frac, interface_packing, approach_angle, epitope_planarity,
 epitope_hydrophobic_frac, epitope_aromatic_n, epitope_glyco_occluded,
 epitope_glyco_sites, nterm_resnum, nterm_resname,
 nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
@@ -137,7 +140,12 @@ binder_sequence`
 With `--self-fold`, also `self_fold, self_bsa, self_n_interface_res,
 self_paratope_overlap_n, self_paratope_overlap_frac, self_paratope_enrichment,
 self_verdict, residues_matched`.
+
 </details>
+
+The literature basis for each developability metric — and which are well-supported
+versus weak heuristics you should report but not gate on — is in
+[DEVELOPABILITY.md](DEVELOPABILITY.md).
 
 ## Tests
 
