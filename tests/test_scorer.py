@@ -17,7 +17,7 @@ FIXTURE = Path(__file__).parent / "data" / "7JZU_LCB1_RBD.pdb"
 
 EXPECTED_COLUMNS = {
     "pdb", "binder_chain", "target_chains", "n_interface_res", "binder_bsa",
-    "n_hbonds", "n_salt_bridges", "interface_packing",
+    "n_hbonds", "n_salt_bridges", "buns_interface", "interface_polar_satisfied_frac", "interface_packing",
     "approach_angle", "epitope_planarity", "epitope_hydrophobic_frac", "epitope_aromatic_n",
     "epitope_glyco_occluded", "epitope_glyco_sites",
     "nterm_resnum", "nterm_resname", "nterm_relsasa", "nterm_dist_to_interface",
@@ -125,6 +125,14 @@ def test_protparam_formulas():
     pp = _protparam(seq)
     assert 30 * 100 < pp["mw"] < 30 * 140                       # ~110 Da/residue
     assert pp["ext_coeff_280"] == 5500 * seq.count("W") + 1490 * seq.count("Y")
+
+
+def test_buried_unsat_polar(row):
+    # LCB1 is a picomolar designed binder with a well-H-bonded interface, so no
+    # buried unsatisfied polars and every interface-buried polar is satisfied.
+    assert row["buns_interface"] == 0
+    assert row["interface_polar_satisfied_frac"] == 1.0
+    assert "buried unsatisfied polar" not in row["warnings"]
 
 
 def test_epitope_composition_reported(row):

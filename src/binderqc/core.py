@@ -499,6 +499,55 @@ def _interface_packing(array, binder_chain, target_chains, binder_bsa, cutoff=4.
     return 100.0 * n / binder_bsa
 
 
+def _buried_unsat_polar(array, atom_sasa, binder_chain, target_chains,
+                        iface_cutoff=5.0, burial_sasa=2.0, partner_cutoff=3.5):
+    """Buried unsatisfied polar atoms at the interface (binder side).
+
+    A binder polar heavy atom (N/O) is a liability when it is (a) in the
+    interface zone (within `iface_cutoff` A of a target polar atom), (b) buried
+    in the complex (per-atom SASA <= `burial_sasa` A^2), yet (c) has no other
+    polar heavy atom in a DIFFERENT residue within `partner_cutoff` A to serve as
+    an H-bond partner. Burying a polar group costs the H-bond it made to water, so
+    an unsatisfied buried polar is destabilizing -- it is a known separator of
+    successful vs failed interface designs (Stranges & Kuhlman, Protein Sci 2013)
+    and is penalized in de novo binder design (Cao et al., Nature 2022). It is the
+    signal that separates a real, H-bond-satisfied polar interface from a floppy
+    one, so it matters most for polar-epitope targeting.
+
+    Proxy, exactly like _count_interface_hbonds: with no hydrogens we cannot check
+    donor/acceptor valence or angle, so an atom is counted satisfied if ANY polar
+    atom of another residue is near it. This CONSERVATIVELY under-counts unsat
+    (a geometrically wrong neighbour still "satisfies"). Returns (buns_count,
+    satisfied_fraction) over the interface-buried binder polar atoms; fraction is
+    NaN when there are no such atoms to judge.
+    """
+    polar = np.isin(array.element, ["N", "O"])
+    binder_polar_idx = np.where(polar & (array.chain_id == binder_chain))[0]
+    tgt_polar = array.coord[polar & np.isin(array.chain_id, list(target_chains))]
+    if len(binder_polar_idx) == 0 or len(tgt_polar) == 0:
+        return 0, float("nan")
+    polar_idx = np.where(polar)[0]
+    polar_coord = array.coord[polar_idx]
+    polar_chain = array.chain_id[polar_idx]
+    polar_res = array.res_id[polar_idx]
+    buns = 0
+    considered = 0
+    for gi in binder_polar_idx:
+        if atom_sasa[gi] > burial_sasa:                      # exposed -> not buried
+            continue
+        c = array.coord[gi]
+        if np.linalg.norm(tgt_polar - c, axis=1).min() > iface_cutoff:   # not at interface
+            continue
+        considered += 1
+        d = np.linalg.norm(polar_coord - c, axis=1)
+        other_res = (polar_chain != array.chain_id[gi]) | (polar_res != array.res_id[gi])
+        if not ((d <= partner_cutoff) & other_res).any():
+            buns += 1
+    if considered == 0:
+        return 0, float("nan")
+    return buns, round(1.0 - buns / considered, 3)
+
+
 def _sap_score(binder_sub, binder_iso_sasa, radius=10.0):
     """Static-structure Spatial Aggregation Propensity (Chennamsetty 2009) on the
     ISOLATED binder. Per residue: sum, over residues whose Cbeta is within `radius`,
@@ -711,6 +760,7 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     binder_bsa = _binder_bsa(atom_sasa, binder_mask, binder_iso_sasa)
     n_hbonds = _count_interface_hbonds(array, binder_chain, target_chains)
     n_salt_bridges = _count_salt_bridges(array, binder_chain, target_chains)
+    buns_interface, polar_satisfied_frac = _buried_unsat_polar(array, atom_sasa, binder_chain, target_chains)
     interface_packing = _interface_packing(array, binder_chain, target_chains, binder_bsa)
     n_rel = relsasa.get((binder_chain, nterm_id), float("nan"))
     c_rel = relsasa.get((binder_chain, cterm_id), float("nan"))
@@ -766,6 +816,9 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         quality.append("binder is the largest chain, so binder/target may be flipped")
     if np.isfinite(binder_bsa) and binder_bsa < 300.0:
         quality.append(f"small interface (binder BSA={binder_bsa:.0f} A^2): possibly weak/spurious")
+    if buns_interface >= 3:
+        quality.append(f"{buns_interface} buried unsatisfied polar atom(s) at interface "
+                       f"(satisfied frac={polar_satisfied_frac:.2f}): floppy/under-packed polar interface")
 
     if not interface_ids:
         recommended = "N/A"
@@ -795,6 +848,8 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "binder_bsa": round(binder_bsa, 1) if np.isfinite(binder_bsa) else float("nan"),
         "n_hbonds": n_hbonds,
         "n_salt_bridges": n_salt_bridges,
+        "buns_interface": buns_interface,
+        "interface_polar_satisfied_frac": polar_satisfied_frac if np.isfinite(polar_satisfied_frac) else float("nan"),
         "interface_packing": round(interface_packing, 2) if np.isfinite(interface_packing) else float("nan"),
         "approach_angle": round(approach, 1) if np.isfinite(approach) else float("nan"),
         "epitope_planarity": round(planarity, 2) if np.isfinite(planarity) else float("nan"),
