@@ -3,9 +3,7 @@
 This documents the literature basis for every developability / interface-quality
 metric `binderqc` reports, and — honestly — which ones are well-supported versus
 which are weak heuristics you should report but not gate on. References were
-checked against primary sources (not from memory); where a citation is marked
-*(unverified)* the metric is standard but a specific primary reference still needs
-to be pinned before it is quoted as fact.
+checked against primary sources (not from memory).
 
 ## Empirical anchor
 
@@ -42,11 +40,11 @@ clinical-stage landscape:
 | `pi`, `mw`, `ext_coeff_280` | ProtParam isoelectric point, mass, extinction | Gasteiger et al. 2005, ProtParam (ExPASy) | **Moderate** (pI: solubility dips near pI) / descriptive (MW, ε) | Report |
 | `instability_index` | Guruprasad dipeptide-composition instability | Guruprasad et al., Protein Eng 1990 [doi:10.1093/protein/4.2.155](https://doi.org/10.1093/protein/4.2.155) | **Weak** — a 1990 dipeptide heuristic; poorly predictive of real stability (e.g. applicability study, Int. J. 2019) | **Report only — never gate** |
 | `sequence_liabilities`: deamidation (NG/NS/NT), Asp isomerization (D-[G/S/T/D/H]) | Chemical degradation motifs | Sydow et al., PLoS ONE 2014 [doi:10.1371/journal.pone.0100736](https://doi.org/10.1371/journal.pone.0100736) | **Strong motif, but sequence-only over-predicts** — actual risk needs local flexibility + C-flank size | Keep; **refinement: gate on exposure/flexibility** (binderqc has structure) |
-| `sequence_liabilities`: unpaired Cys | Free-thiol (scrambling/aggregation/conjugation) risk | developability liability literature (reviewed in Jain 2017 context) *(unverified specific ref)* | **Moderate** — odd-count heuristic; even counts can still expose a free thiol | Keep; refine with SG SASA |
-| `sequence_liabilities`: exposed Met/Trp oxidation | Solvent-exposed oxidation-prone residues (SASA-gated) | oxidation liability literature *(unverified specific ref)* | **Moderate–Strong** — exposure-gating is the correct refinement | Keep; elevate severity for radioligand (RLT) candidates |
-| `epitope_glyco_occluded`, `epitope_glyco_sites` | Target N-X-[S/T] sequons (X≠P), SASA-aware, near interface | canonical sequon rule *(specific ref unverified)* | **Strong motif / Moderate for actual occupancy** — structure-aware check is the right refinement | Keep |
+| `sequence_liabilities`: unpaired Cys | Free-thiol (scrambling/aggregation/conjugation) risk | in-silico PTM review, mAbs: [PMC8791605](https://pmc.ncbi.nlm.nih.gov/articles/PMC8791605/) | **Moderate** — odd-count heuristic; even counts can still expose a free thiol | Keep; refine with SG SASA |
+| `sequence_liabilities`: exposed Met/Trp oxidation | Solvent-exposed oxidation-prone residues (SASA-gated) | Met/Trp photooxidation predictor — solvent exposure is the dominant predictor: [PMC8060516](https://pmc.ncbi.nlm.nih.gov/articles/PMC8060516/) | **Moderate–Strong** — exposure-gating is the correct refinement | Keep; elevate severity for radioligand (RLT) candidates |
+| `epitope_glyco_occluded`, `epitope_glyco_sites` | Target N-X-[S/T] sequons (X≠P), SASA-aware, near interface | Gavel & von Heijne, Protein Eng 1990 [doi:10.1093/protein/3.5.433](https://doi.org/10.1093/protein/3.5.433) (necessary, not sufficient) | **Strong motif / Moderate for actual occupancy** — structure-aware check is the right refinement | Keep |
 | `interface_packing` | Heavy-atom contacts per 100 Å² BSA (CMS proxy) | proxy for Rosetta contact-molecular-surface | **Weak** — unvalidated proxy (already labelled in code) | Report, don't gate |
-| `approach_angle`, `epitope_planarity`, grippability | Pose / designability heuristics (IARA grippability validated in-house: EDB 9/9, TNC 0/8) | design heuristics | **Moderate** — designability, not developability | Report |
+| `approach_angle`, `epitope_planarity`, grippability | Pose / epitope-grippability heuristics | design heuristics | **Moderate** — designability, not developability | Report |
 
 ## Verdict — help vs. report-only
 
