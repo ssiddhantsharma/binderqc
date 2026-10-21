@@ -9,6 +9,7 @@ worked example of the "ambiguous" case. RCSB coordinate files are public domain.
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from binderqc import score_structure
@@ -91,6 +92,14 @@ def test_pose_and_grippability(row):
 def test_sequence_liabilities_is_a_string(row):
     # May be empty; must never be missing.
     assert isinstance(row["sequence_liabilities"], str)
+
+
+def test_histidine_run_flagged():
+    from binderqc.core import _sequence_liabilities
+
+    flags = _sequence_liabilities("AAAHHHAAA")
+    assert any("histidine run" in f for f in flags)
+    assert not any("histidine run" in f for f in _sequence_liabilities("AAAHHAAA"))
 
 
 def test_expression_signals_in_range(row):
@@ -275,6 +284,29 @@ def test_cli_writes_csv_and_fasta(tmp_path):
           "--out", str(out), "--fasta", str(fa), str(FIXTURE)])
     assert out.exists() and out.read_text().count("\n") >= 2      # header + >=1 row
     assert fa.read_text().startswith(">")                          # LCB1 passes QC
+
+
+def test_deamidation_is_exposure_gated():
+    # Sydow et al. 2014: a buried N-G/D-G motif reacts far slower than an exposed one,
+    # so flagging on sequence alone over-predicts. Minimal synthetic chain (no real SASA
+    # needed -- relsasa is passed in directly to isolate the gating logic).
+    import biotite.structure as struc
+
+    from binderqc.core import _exposed_deamidation_sites
+
+    arr = struc.AtomArray(3)
+    arr.coord = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    arr.chain_id = np.array(["A", "A", "A"])
+    arr.res_id = np.array([1, 2, 3])
+    arr.res_name = np.array(["ASN", "GLY", "ALA"])  # N1-G2 is a deamidation motif
+    arr.atom_name = np.array(["CA", "CA", "CA"])
+    arr.element = np.array(["C", "C", "C"])
+
+    exposed = {("A", 1): 0.50, ("A", 2): 0.50, ("A", 3): 0.50}
+    buried = {("A", 1): 0.05, ("A", 2): 0.50, ("A", 3): 0.50}
+
+    assert _exposed_deamidation_sites(arr, "A", exposed) == ["N1G (exposed, rel_sasa=0.50)"]
+    assert _exposed_deamidation_sites(arr, "A", buried) == []
 
 
 def test_cli_iara_score_adds_consensus_column(tmp_path):

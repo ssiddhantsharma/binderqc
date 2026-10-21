@@ -111,10 +111,12 @@ Per binder chain:
   sticky or charge-clumped. These are reported numbers, not gates: TAP's thresholds
   are calibrated on antibody Fv surfaces and do not transfer to minibinders. It also
   reports the ProtParam instability index (Guruprasad 1990), GRAVY, pI, MW, and
-  ε₂₈₀. Sequence liabilities cover deamidation (N-[G/S/T]), Asp isomerization
-  (D-[G/S/T/D/H]), unpaired cysteines, N-glycosylation sequons, and Met/Trp
-  oxidation hotspots. The oxidation check is SASA-aware, so only surface-exposed
-  residues count.
+  ε₂₈₀. Sequence liabilities cover unpaired cysteines, N-glycosylation sequons,
+  polybasic and hydrophobic runs, histidine runs (confounds IMAC purification and
+  reads like an affinity tag), and Met/Trp oxidation hotspots. Deamidation
+  (N-[G/S/T]) and Asp isomerization (D-[G/S/T/D/H]) are flagged too, but — like the
+  oxidation check — only when the residue is solvent-exposed: a buried motif reacts
+  far more slowly (Sydow et al. 2014), so a sequence-only hit over-predicts.
 
 A `warnings` column flags problems: small, flat, anchorless, or glyco-occluded
 interfaces; buried, ambiguous, or interface-facing tag sites; hydrophobic

@@ -180,21 +180,26 @@ def _binder_sequence(array, chain_id):
 def _sequence_liabilities(seq):
     """Common developability red flags, straight from the sequence. Motifs and
     thresholds are the ones in Adaptyv's protein-qc skill (MIT). These are things
-    to look at, not automatic rejections."""
+    to look at, not automatic rejections.
+
+    Deamidation (NG/NS/NT) and Asp isomerization (D-[G/S/T/D/H]) are deliberately NOT
+    here: Sydow et al. 2014 found the real risk is set by local backbone flexibility
+    and exposure as well as the C+1 flank, so a sequence-only motif hit over-predicts.
+    binderqc has the structure, so those two are exposure-gated -- see
+    `_exposed_deamidation_sites`, computed alongside `_exposed_oxidation` in
+    `_score_binder_chain` and folded into the same `sequence_liabilities` column."""
     flags = []
     n_cys = seq.count("C")
     if n_cys % 2 == 1:
         flags.append(f"odd Cys count ({n_cys}): possible unpaired thiol")
     if re.search(r"N[^P][ST]", seq):
         flags.append("N-glycosylation sequon (NxS/T)")
-    if re.search(r"N[GST]", seq):
-        flags.append("deamidation motif (NG/NS/NT)")
-    if re.search(r"D[GSTDH]", seq):
-        flags.append("Asp isomerization motif (D-[G/S/T/D/H])")
     if re.search(r"[KR]{3,}", seq):
         flags.append("polybasic run (>=3 K/R): proteolysis")
     if re.search(r"[AILMFWV]{6,}", seq):
         flags.append("hydrophobic run (>=6): aggregation")
+    if re.search(r"H{3,}", seq):
+        flags.append("histidine run (>=3): confounds IMAC purification, reads like an affinity tag")
     return flags
 
 
@@ -352,6 +357,35 @@ def _exposed_oxidation(array, binder_chain, relsasa, cut=0.30):
             rel = relsasa.get((array.chain_id[s], int(array.res_id[s])), float("nan"))
             if rel == rel and rel >= cut:
                 sites.append(f"{_THREE_TO_ONE[nm]}{int(array.res_id[s])}")
+    return sites
+
+
+def _exposed_deamidation_sites(array, binder_chain, relsasa, cut=0.30):
+    """Exposed N-[G/S/T] deamidation and D-[G/S/T/D/H] Asp-isomerization motifs on the
+    binder, same exposure gate as `_exposed_oxidation`. Sydow et al. 2014 (PLoS ONE,
+    doi:10.1371/journal.pone.0100736) found deamidation/isomerization risk is set by
+    local backbone flexibility and exposure as well as the C+1 flank identity -- a
+    buried motif reacts far more slowly, so flagging on sequence alone over-predicts.
+    Gated on the N/D residue's own relative SASA (over the complex, same convention as
+    the oxidation check), not the flanking residue's."""
+    ordered = _chain_res_ids(array, binder_chain)
+    names = {}
+    for s in struc.get_residue_starts(array):
+        if str(array.chain_id[s]) == binder_chain:
+            names[int(array.res_id[s])] = _THREE_TO_ONE.get(str(array.res_name[s]), "X")
+
+    sites = []
+    for i, rid in enumerate(ordered[:-1]):
+        a, b = names.get(rid), names.get(ordered[i + 1])
+        if a not in ("N", "D"):
+            continue
+        rel = relsasa.get((binder_chain, rid), float("nan"))
+        if rel != rel or rel < cut:
+            continue
+        if a == "N" and b in "GST":
+            sites.append(f"N{rid}{b} (exposed, rel_sasa={rel:.2f})")
+        elif a == "D" and b in "GSTDH":
+            sites.append(f"D{rid}{b} (exposed, rel_sasa={rel:.2f})")
     return sites
 
 
@@ -791,9 +825,12 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     binder_seq = _binder_sequence(array, binder_chain)
     seqm = _sequence_metrics(binder_seq)
     ox_sites = _exposed_oxidation(array, binder_chain, relsasa)
+    deamidation_sites = _exposed_deamidation_sites(array, binder_chain, relsasa)
     liabilities = list(seqm["sequence_liabilities"])
     if ox_sites:
         liabilities.append("solvent-exposed Met/Trp (oxidation): " + ", ".join(ox_sites))
+    if deamidation_sites:
+        liabilities.append("exposed deamidation/isomerization motif(s): " + ", ".join(deamidation_sites))
     liabilities_str = "; ".join(liabilities)
     sap, sap_total = _sap_score(binder_sub, binder_iso_sasa)
     a3d_peak, a3d_total = _a3d_score(binder_sub, binder_iso_sasa)

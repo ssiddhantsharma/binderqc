@@ -39,9 +39,10 @@ clinical-stage landscape:
 | `gravy` | Mean Kyte–Doolittle hydrophobicity | Kyte & Doolittle, J Mol Biol 1982 [doi:10.1016/0022-2836(82)90515-0](https://doi.org/10.1016/0022-2836(82)90515-0) | **Moderate** — crude 1-D hydrophobicity; 3-D SAP/A3D are better for aggregation/solubility | Report; defer to SAP/A3D |
 | `pi`, `mw`, `ext_coeff_280` | ProtParam isoelectric point, mass, extinction | Gasteiger et al. 2005, ProtParam (ExPASy) | **Moderate** (pI: solubility dips near pI) / descriptive (MW, ε) | Report |
 | `instability_index` | Guruprasad dipeptide-composition instability | Guruprasad et al., Protein Eng 1990 [doi:10.1093/protein/4.2.155](https://doi.org/10.1093/protein/4.2.155) | **Weak** — a 1990 dipeptide heuristic; poorly predictive of real stability (e.g. applicability study, Int. J. 2019) | **Report only — never gate** |
-| `sequence_liabilities`: deamidation (NG/NS/NT), Asp isomerization (D-[G/S/T/D/H]) | Chemical degradation motifs | Sydow et al., PLoS ONE 2014 [doi:10.1371/journal.pone.0100736](https://doi.org/10.1371/journal.pone.0100736) | **Strong motif, but sequence-only over-predicts** — actual risk needs local flexibility + C-flank size | Keep; **refinement: gate on exposure/flexibility** (binderqc has structure) |
+| `sequence_liabilities`: deamidation (NG/NS/NT), Asp isomerization (D-[G/S/T/D/H]) | Chemical degradation motifs | Sydow et al., PLoS ONE 2014 [doi:10.1371/journal.pone.0100736](https://doi.org/10.1371/journal.pone.0100736) | **Strong** — exposure-gated on the N/D residue's own relative SASA (same convention as the oxidation check), same over-prediction fix | Keep; remaining gap is backbone flexibility, not yet modeled (see below) |
 | `sequence_liabilities`: unpaired Cys | Free-thiol (scrambling/aggregation/conjugation) risk | in-silico PTM review, mAbs: [PMC8791605](https://pmc.ncbi.nlm.nih.gov/articles/PMC8791605/) | **Moderate** — odd-count heuristic; even counts can still expose a free thiol | Keep; refine with SG SASA |
 | `sequence_liabilities`: exposed Met/Trp oxidation | Solvent-exposed oxidation-prone residues (SASA-gated) | Met/Trp photooxidation predictor — solvent exposure is the dominant predictor: [PMC8060516](https://pmc.ncbi.nlm.nih.gov/articles/PMC8060516/) | **Moderate–Strong** — exposure-gating is the correct refinement | Keep; elevate severity for radioligand (RLT) candidates |
+| `sequence_liabilities`: histidine run (≥3) | Confounds IMAC purification; reads like an engineered affinity tag rather than a designed sequence | Practical filter rule, not a biophysical-degradation paper — sourced from Anthropic's scorpion-toxin binder campaign's own documented design filters (Claude Science et al. 2026) | **Practical, not biophysically validated here** — a purification/QC confound, not a stability or aggregation mechanism; sequence-only (no exposure concept applies) | Keep; report only, this is not a developability mechanism to gate on |
 | `epitope_glyco_occluded`, `epitope_glyco_sites` | Target N-X-[S/T] sequons (X≠P), SASA-aware, near interface | Gavel & von Heijne, Protein Eng 1990 [doi:10.1093/protein/3.5.433](https://doi.org/10.1093/protein/3.5.433) (necessary, not sufficient) | **Strong motif / Moderate for actual occupancy** — structure-aware check is the right refinement | Keep |
 | `interface_packing` | Heavy-atom contacts per 100 Å² BSA (CMS proxy) | proxy for Rosetta contact-molecular-surface | **Weak** — unvalidated proxy (already labelled in code) | Report, don't gate |
 | `approach_angle`, `epitope_planarity`, grippability | Pose / epitope-grippability heuristics | design heuristics | **Moderate** — designability, not developability | Report |
@@ -57,11 +58,17 @@ exposed Met/Trp oxidation, structure-aware glyco occlusion.
 the clearest "don't gate" case), `gravy` (defer to SAP/A3D for aggregation),
 `interface_packing` (unvalidated proxy), `pi` (context-dependent).
 
-**Highest-value refinement:** the deamidation/isomerization flags are currently
-sequence-motif-only, which over-predicts. Sydow 2014 shows the real risk is set by
-local backbone flexibility and the C-terminal flanking residue — and `binderqc`
-already has the structure, so gating these flags on exposure/flexibility is the
-single biggest accuracy gain available.
+**Done:** the deamidation/isomerization flags were sequence-motif-only, which
+over-predicts. They're now exposure-gated on the N/D residue's own relative SASA
+(`_exposed_deamidation_sites`, same convention and threshold as the Met/Trp
+oxidation check) — a buried motif is no longer flagged.
+
+**Remaining gap:** Sydow 2014's real predictor is local backbone *flexibility*, not
+exposure alone — the two correlate but aren't the same thing, and a solvent-exposed
+residue on a rigid helix still reacts more slowly than one on a flexible loop.
+Modeling that needs a flexibility proxy (B-factor/pLDDT, or a secondary-structure/
+backbone-dihedral-variance check) that `binderqc` doesn't compute yet. Exposure
+gating is the cheap, already-available half of the fix; flexibility is the next one.
 
 ## Not currently in binderqc (candidates, require model dependencies)
 
