@@ -109,8 +109,14 @@ Per binder chain:
   actual insight, the same idea is also computed over the binding region:
   `paratope_hydrophobicity` and `paratope_charge` say whether the interface itself is
   sticky or charge-clumped. These are reported numbers, not gates: TAP's thresholds
-  are calibrated on antibody Fv surfaces and do not transfer to minibinders. It also
-  reports the ProtParam instability index (Guruprasad 1990), GRAVY, pI, MW, and
+  are calibrated on antibody Fv surfaces and do not transfer to minibinders.
+  `net_charge` and `lys_arg_pct` are a distinct, **whole-binder** (not paratope-scoped)
+  nonspecific-stickiness proxy: of 25 candidate measures a recent large-scale de novo
+  binder campaign tried against real BVP-ELISA and ovalbumin polyreactivity data (211
+  designs, two independent CROs), these two were its strongest correlates (net charge
+  rho=-0.57, Lys+Arg rho=0.50) — a more positively charged, more Lys/Arg-rich binder
+  reads stickier on an unrelated-protein assay, independent of interface chemistry. It
+  also reports the ProtParam instability index (Guruprasad 1990), GRAVY, pI, MW, and
   ε₂₈₀. Sequence liabilities cover unpaired cysteines, N-glycosylation sequons,
   polybasic and hydrophobic runs, histidine runs (confounds IMAC purification and
   reads like an affinity tag), and Met/Trp oxidation hotspots. Deamidation
@@ -133,8 +139,8 @@ epitope_hydrophobic_frac, epitope_aromatic_n, epitope_glyco_occluded,
 epitope_glyco_sites, nterm_resnum, nterm_resname,
 nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
 cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface,
-cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi,
-instability_index, ext_coeff_280, sap_score, sap_total, sap_per_res, a3d_score,
+cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi, net_charge,
+lys_arg_pct, instability_index, ext_coeff_280, sap_score, sap_total, sap_per_res, a3d_score,
 a3d_total_positive, charge_patch_pos, charge_patch_neg, paratope_hydrophobicity,
 paratope_charge, paratope_res, sequence_liabilities, warnings, qc_pass,
 binder_sequence`

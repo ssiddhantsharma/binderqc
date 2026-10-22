@@ -389,8 +389,19 @@ def _exposed_deamidation_sites(array, binder_chain, relsasa, cut=0.30):
     return sites
 
 
+def _lys_arg_pct(seq):
+    return round(100 * sum(seq.count(a) for a in "KR") / len(seq), 1) if seq else float("nan")
+
+
 def _sequence_metrics(seq):
-    """Sequence-derived row fields (developability + expression), pre-rounded."""
+    """Sequence-derived row fields (developability + expression), pre-rounded.
+
+    `net_charge` and `lys_arg_pct` are WHOLE-BINDER, unlike `paratope_charge` (interface-
+    scoped, from `_score_binder_chain`). They're a distinct signal: a recent large-scale
+    de novo binder campaign (Claude Science et al. 2026, 211 designs tested by two CROs'
+    SPR/BLI plus a BVP-ELISA and ovalbumin polyreactivity counter-screen) found whole-
+    molecule net charge (rho=-0.57) and Lys+Arg content (rho=0.50) were its two strongest
+    correlates of nonspecific/polyreactive binding, out of 25 candidate measures tried."""
     pp = _protparam(seq)
     gravy = _gravy(seq)
     ii = instability_index(seq)
@@ -401,6 +412,8 @@ def _sequence_metrics(seq):
         "mw": round(pp["mw"], 1) if np.isfinite(pp["mw"]) else float("nan"),
         "gravy": round(gravy, 3) if np.isfinite(gravy) else float("nan"),
         "pi": round(_isoelectric_point(seq), 2) if seq else float("nan"),
+        "net_charge": round(_net_charge(seq), 2) if seq else float("nan"),
+        "lys_arg_pct": _lys_arg_pct(seq),
         "instability_index": round(ii, 1) if np.isfinite(ii) else float("nan"),
         "ext_coeff_280": pp["ext_coeff_280"],
         "sequence_liabilities": libs,   # list; joined by the caller after adding SASA-based flags
@@ -910,6 +923,8 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "mw": seqm["mw"],
         "gravy": seqm["gravy"],
         "pi": seqm["pi"],
+        "net_charge": seqm["net_charge"],
+        "lys_arg_pct": seqm["lys_arg_pct"],
         "instability_index": seqm["instability_index"],
         "ext_coeff_280": seqm["ext_coeff_280"],
         "sap_score": round(sap, 2) if np.isfinite(sap) else float("nan"),

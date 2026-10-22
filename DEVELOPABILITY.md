@@ -32,6 +32,7 @@ clinical-stage landscape:
 | `sap_score`, `sap_total`, `sap_per_res` | Spatial aggregation propensity — dynamically exposed, spatially-clustered hydrophobics | Chennamsetty et al., PNAS 2009 [doi:10.1073/pnas.0904191106](https://doi.org/10.1073/pnas.0904191106) | **Strong** — validated, widely used aggregation predictor | Keep; primary aggregation flag |
 | `a3d_score`, `a3d_total_positive` | Structure-aware aggregation propensity (Aggrescan3D) | Kuriata et al., NAR 2019 (A3D 2.0) [doi:10.1093/nar/gkz321](https://doi.org/10.1093/nar/gkz321); orig. Zambrano et al. 2015 | **Strong–Moderate** — established; complements SAP | Keep; cross-check with SAP |
 | `charge_patch_pos`, `charge_patch_neg` | Surface charge patches (TAP PPC/PNC style) | Raybould et al., PNAS 2019 | **Strong** — TAP validated on clinical mAbs | Keep; thresholds provisional for minibinders |
+| `net_charge`, `lys_arg_pct` (whole-binder, not paratope-scoped) | Nonspecific/polyreactive binding proxy | Claude Science et al. 2026, scorpion-toxin binder campaign: BVP ELISA + ovalbumin SPR counter-screen on 211 tested designs at two independent CROs; strongest of 25 candidate measures tried (Bonferroni p<0.002): net charge rho=-0.57, Lys+Arg rho=0.50 | **Strong for this specific endpoint (real wet-lab n=211)**, but it's a correlate from one campaign's binder set, not a mechanistic model — treat as ranking, not a hard cutoff; campaign's own binder range was roughly -12 to +8 net charge, 10-22% Lys+Arg | Keep; distinct from `paratope_charge` (interface-scoped) and from SAP/A3D (aggregation, not polyreactivity) |
 | `paratope_hydrophobicity`, `paratope_charge` | Interface patch composition (TAP PSH-style, paratope-scoped) | Raybould et al., PNAS 2019 | **Moderate** — right concept, interface-scoped variant not independently validated here | Keep as ranking signal |
 | `buns_interface`, `interface_polar_satisfied_frac` | Buried unsatisfied polar atoms at the interface | Stranges & Kuhlman, Protein Sci 2013 [doi:10.1002/pro.2187](https://doi.org/10.1002/pro.2187); penalized in Cao et al., Nature 2022 [doi:10.1038/s41586-022-04654-9](https://doi.org/10.1038/s41586-022-04654-9) | **Strong** for interface quality — buried-unsat separates successful from failed interface designs | Keep; the key polar-interface-quality signal (new) |
 | `n_hbonds` | Interface N/O–N/O contacts ≤3.5 Å (H-bond proxy, no H/angle) | geometric proxy; H-bond design context Boyken et al., Science 2016 [doi:10.1126/science.aad8865](https://doi.org/10.1126/science.aad8865) | **Moderate** — over-counts (no donor/acceptor or angle check) | Report; pair with `buns_interface` |
@@ -56,7 +57,9 @@ exposed Met/Trp oxidation, structure-aware glyco occlusion.
 
 **Report, do not gate (weak or crude):** `instability_index` (weak 1990 heuristic —
 the clearest "don't gate" case), `gravy` (defer to SAP/A3D for aggregation),
-`interface_packing` (unvalidated proxy), `pi` (context-dependent).
+`interface_packing` (unvalidated proxy), `pi` (context-dependent). `net_charge` /
+`lys_arg_pct` also belong here despite real wet-lab backing: n=211 from one campaign's
+binder set is a correlate to rank by, not a validated cutoff to gate on.
 
 **Done:** the deamidation/isomerization flags were sequence-motif-only, which
 over-predicts. They're now exposure-gated on the N/D residue's own relative SASA
