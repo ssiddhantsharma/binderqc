@@ -66,63 +66,74 @@ a tag-site advisory, so `qc_pass` stays `True`.
 
 ## What it reports
 
-Per binder chain:
+Per binder chain. Every number is CPU-only — no folding, no GPU, no network.
 
-- **Interface**: buried surface area, interface residue count, hydrogen-bond and
-  salt-bridge counts, buried unsatisfied polar atoms at the interface
-  (`buns_interface`, `interface_polar_satisfied_frac` — the signal that separates a
-  real H-bond-satisfied polar interface from a floppy one; Stranges & Kuhlman 2013,
-  Cao et al. 2022), and a contact-packing density (a lightweight proxy for contact
-  molecular surface).
-- **Self-association** (with `--self-fold`): given a predicted binder homodimer,
-  how much of the paratope the self-interface buries (`self_paratope_overlap_frac`)
-  and whether it is more than a patch that size would bury sitting anywhere on the
-  binder at random (`self_paratope_enrichment`). Interface PAE, ipTM and ipSAE say
-  whether a self-interface is predicted; they cannot say *where*. Self-association
-  away from the paratope is a formulation problem, self-association through it
-  competes with target binding. `self_verdict` bands the buried fraction at 0.5 and
-  0.2 — a stated convention, not a calibrated cutoff, since no dataset of de-novo
-  binders with measured self-association exists to fit one on.
+**Interface** — buried surface area, interface residue count, H-bonds, salt bridges,
+contact-packing density, and buried unsatisfied polar atoms (`buns_interface`,
+`interface_polar_satisfied_frac`). The last is the signal that separates a real
+H-bond-satisfied interface from a floppy one (Stranges & Kuhlman 2013; Cao et al. 2022).
 
-- **Pose**: approach angle (end-on vs. lying across the surface).
-- **Grippability**: epitope planarity, hydrophobic fraction, aromatic anchors, and
-  a SASA-aware glyco-occlusion check (`epitope_glyco_occluded`,
-  `epitope_glyco_sites`). The check flags N-glycosylation sequons (N-X-[S/T]) that
-  are exposed on the *free* target and sit at or near the epitope, where an
-  installed glycan would mask an otherwise grippable patch.
-  `grippability_consensus(row, iara_score)` optionally cross-checks this physical
-  read against a learned target-side score (for example an IARA epitope mean,
-  computed by the caller so binderqc stays dependency-clean) and returns
-  `grippable`, `flat`, or `disagree`. Pass `--iara-score` on the CLI to add it as
-  a column.
-- **Tag site**: recommended terminus (N/C) and the numbers behind it: relative
-  SASA, CA-CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
-- **Developability**: two complementary aggregation scores, an SAP-style spatial
-  aggregation score (`sap_score`, `sap_total`, and `sap_per_res` = load per residue,
-  since `sap_total` scales with chain length and the literature `SAP < 35` bar was
-  calibrated on 52-65 residue binders) and an Aggrescan3D score
-  (`a3d_score`, `a3d_total_positive`, a faithful pure-Python port of Aggrescan3D
-  1.0.2's a3v scale and algorithm, Pearson r≈0.92 vs the reference tool). Plus
-  TAP-style surface charge patches (Raybould et al. 2019): `charge_patch_pos` and
-  `charge_patch_neg` are the strongest exposed clusters of like charge, which net
-  charge and pI miss and which drive viscosity and self-association. Following TAP's
-  actual insight, the same idea is also computed over the binding region:
-  `paratope_hydrophobicity` and `paratope_charge` say whether the interface itself is
-  sticky or charge-clumped. These are reported numbers, not gates: TAP's thresholds
-  are calibrated on antibody Fv surfaces and do not transfer to minibinders.
-  `net_charge` and `lys_arg_pct` are a distinct, **whole-binder** (not paratope-scoped)
-  nonspecific-stickiness proxy: of 25 candidate measures a recent large-scale de novo
-  binder campaign tried against real BVP-ELISA and ovalbumin polyreactivity data (211
-  designs, two independent CROs), these two were its strongest correlates (net charge
-  rho=-0.57, Lys+Arg rho=0.50) — a more positively charged, more Lys/Arg-rich binder
-  reads stickier on an unrelated-protein assay, independent of interface chemistry. It
-  also reports the ProtParam instability index (Guruprasad 1990), GRAVY, pI, MW, and
-  ε₂₈₀. Sequence liabilities cover unpaired cysteines, N-glycosylation sequons,
-  polybasic and hydrophobic runs, histidine runs (confounds IMAC purification and
-  reads like an affinity tag), and Met/Trp oxidation hotspots. Deamidation
-  (N-[G/S/T]) and Asp isomerization (D-[G/S/T/D/H]) are flagged too, but — like the
-  oxidation check — only when the residue is solvent-exposed: a buried motif reacts
-  far more slowly (Sydow et al. 2014), so a sequence-only hit over-predicts.
+**Pose** — approach angle: end-on versus lying across the surface.
+
+**Grippability** — epitope planarity, hydrophobic fraction, aromatic anchors, and a
+glycan-occlusion flag (below). `grippability_consensus(row, iara_score)` optionally
+cross-checks this physical read against a learned target-side score and returns
+`grippable`, `flat`, or `disagree`.
+
+**Tag site** — recommended terminus (N/C) with the numbers behind it: relative SASA,
+CA–CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
+
+**Self-association** (`--self-fold`) — given a predicted binder homodimer, how much of the
+paratope the self-interface buries, and whether that is more than a patch of that size
+would bury sitting anywhere at random. Interface PAE, ipTM and ipSAE say whether a
+self-interface is predicted; they cannot say *where*. Away from the paratope that is a
+formulation problem; through it, it competes with target binding. `self_verdict` bands at
+0.5 and 0.2 — a stated convention, not a fitted cutoff: no dataset of de-novo binders with
+measured self-association exists to calibrate on.
+
+**Developability** — reported numbers, not gates. Published thresholds here were calibrated
+on antibody Fv surfaces or on 52–65-residue binders and do not transfer cleanly.
+
+| group | columns | note |
+|---|---|---|
+| aggregation | `sap_score`, `sap_total`, `sap_per_res` | `sap_total` scales with length, so `sap_per_res` is the comparable one |
+| aggregation | `a3d_score`, `a3d_total_positive` | pure-Python Aggrescan3D 1.0.2 port, Pearson r≈0.92 vs the reference tool |
+| surface charge | `charge_patch_pos`, `charge_patch_neg` | strongest exposed like-charge clusters (Raybould et al. 2019) — what net charge and pI miss, and what drives viscosity |
+| paratope-scoped | `paratope_hydrophobicity`, `paratope_charge` | is the *interface itself* sticky or charge-clumped |
+| nonspecific stickiness | `net_charge`, `lys_arg_pct` | whole-binder, not paratope. Of 25 measures tested against BVP-ELISA and ovalbumin polyreactivity (211 designs, two CROs) these correlated best: ρ=−0.57 and ρ=0.50 |
+| classical | `instability_index`, `gravy`, `pi`, `mw`, `ext_coeff_280` | ProtParam (Guruprasad 1990) |
+
+**Sequence liabilities** — unpaired cysteines, N-glycosylation sequons, polybasic and
+hydrophobic runs, histidine runs (confounds IMAC and reads like an affinity tag), and
+Met/Trp oxidation hotspots. Deamidation (N-[G/S/T]) and Asp isomerization (D-[G/S/T/D/H])
+are flagged **only when solvent-exposed** — a buried motif reacts far more slowly
+(Sydow et al. 2014), so a sequence-only hit over-predicts.
+
+### Glycan occlusion, and what this is not
+
+`epitope_glyco_occluded` / `epitope_glyco_sites` flag N-glycosylation sequons
+(N-X-[S/T], X≠P) on the **target** that are both solvent-exposed and near the epitope,
+where an installed glycan would mask an otherwise grippable patch.
+
+Two details make it more than a sequence grep:
+
+- exposure is measured on the **free target**, not the complex. Glycans are installed
+  before the binder arrives, and in the complex an engaged epitope Asn reads as buried —
+  so complex SASA would hide exactly the sites that matter.
+- sequons are read off the modeled chain, so a gap from an unresolved loop cannot
+  fabricate a phantom site.
+
+**It is a proximity flag, not a glycan model.** The test is: sequon, exposed
+(relSASA ≥ 0.20), within 10 Å of the epitope. It does not build glycan conformations, so
+it cannot tell you *how much* of the accessible ensemble is blocked, and it says nothing
+about the entropic cost of a binder that restricts glycan flexibility — which can hurt
+affinity even when the pose is sterically fine.
+
+For that, use [GlycoSHIELD](https://gitlab.mpcdf.mpg.de/dioscuri-biophysics/glycoshield-md)
+(Gecht et al., [doi:10.1101/2021.08.04.455134](https://doi.org/10.1101/2021.08.04.455134)):
+graft conformer ensembles onto the site and ask what fraction stays compatible with each
+pose. The sensible division of labour is to let binderqc flag the sites cheaply across a
+whole batch, then run GlycoSHIELD on the candidates that survive.
 
 A `warnings` column flags problems: small, flat, anchorless, or glyco-occluded
 interfaces; buried, ambiguous, or interface-facing tag sites; hydrophobic
