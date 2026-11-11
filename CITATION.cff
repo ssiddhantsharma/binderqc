@@ -8,8 +8,8 @@ type: software
 authors:
   - given-names: Siddhant
     family-names: Sharma
-version: 0.6.0
-date-released: "2026-10-22"
+version: 0.7.0
+date-released: "2026-11-11"
 doi: 10.5281/zenodo.21529428
 license: MIT
 repository-code: "https://github.com/ssiddhantsharma/binderqc"
