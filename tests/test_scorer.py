@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from binderqc import score_structure
+from binderqc.core import _load_protein, _target_interface_res, parse_epitope
 
 FIXTURE = Path(__file__).parent / "data" / "7JZU_LCB1_RBD.pdb"
 
@@ -29,7 +30,7 @@ EXPECTED_COLUMNS = {
     "instability_index", "ext_coeff_280", "sap_score", "sap_total", "sap_per_res",
     "a3d_score", "a3d_total_positive",
     "charge_patch_pos", "charge_patch_neg", "paratope_hydrophobicity", "paratope_charge",
-    "paratope_res", "sequence_liabilities", "warnings", "qc_pass", "binder_sequence",
+    "paratope_res", "sequence_liabilities", "warnings", "qc_pass", "exposure_context_degradation", "exposure_context_surface", "binder_sequence",
 }
 
 
@@ -332,3 +333,78 @@ def test_cli_iara_score_adds_consensus_column(tmp_path):
     out2 = tmp_path / "out2.csv"
     main(["--binder-chains", "A", "--target-chains", "B", "--out", str(out2), str(FIXTURE)])
     assert "grippability_consensus" not in out2.read_text().splitlines()[0]
+
+
+# --- declared epitope ------------------------------------------------------
+
+def test_parse_epitope_ranges_and_chains():
+    assert parse_epitope("B:45,47,50-52") == {("B", 45), ("B", 47), ("B", 50), ("B", 51), ("B", 52)}
+    assert parse_epitope("B:45+C:9") == {("B", 45), ("C", 9)}
+    assert parse_epitope("B:52-50") == {("B", 50), ("B", 51), ("B", 52)}   # reversed range
+    assert parse_epitope("") == set()
+
+
+def test_parse_epitope_rejects_bare_residue():
+    # guessing the chain is how an epitope spec rots once a second target chain appears
+    with pytest.raises(ValueError):
+        parse_epitope("45")
+
+
+def test_epitope_columns_absent_unless_declared():
+    row = score_structure(FIXTURE, verbose=False)[0]
+    assert "epitope_contact_fraction" not in row
+
+
+def test_epitope_fraction_is_one_when_declared_equals_contacted():
+    array = _load_protein(FIXTURE)
+    contacted = _target_interface_res(array, "A", ["B"], 5.0)
+    spec = "B:" + ",".join(str(r) for _, r in contacted)
+    row = score_structure(FIXTURE, epitope=spec, verbose=False)[0]
+    assert row["epitope_contact_fraction"] == pytest.approx(1.0)
+    assert row["epitope_coverage"] == pytest.approx(1.0)
+    assert row["epitope_hit_n"] == len(contacted)
+
+
+def test_epitope_precision_and_recall_are_separate():
+    # half the real epitope: every contact is on-site (recall 1) but the design also
+    # touches residues nobody declared, so precision must drop. Reporting one number
+    # would call this a perfect hit.
+    array = _load_protein(FIXTURE)
+    contacted = _target_interface_res(array, "A", ["B"], 5.0)
+    half = contacted[: len(contacted) // 2]
+    row = score_structure(FIXTURE, epitope="B:" + ",".join(str(r) for _, r in half), verbose=False)[0]
+    assert row["epitope_coverage"] == pytest.approx(1.0)
+    assert row["epitope_contact_fraction"] < 0.6
+
+
+def test_epitope_missing_residues_are_counted_not_silently_dropped():
+    row = score_structure(FIXTURE, epitope="B:1-5", verbose=False)[0]   # not in this construct
+    assert row["epitope_declared_missing"] == 5
+    assert row["epitope_contact_fraction"] == pytest.approx(0.0)
+
+
+# --- exposure conventions --------------------------------------------------
+
+def test_degradation_context_changes_interface_buried_sites():
+    """A residue buried against the target is exposed in the free binder and not in the
+    complex. The two conventions must therefore disagree, or the option is a no-op."""
+    bound = score_structure(FIXTURE, degradation_context="complex", verbose=False)[0]
+    free = score_structure(FIXTURE, degradation_context="free", verbose=False)[0]
+    assert bound["sequence_liabilities"] != free["sequence_liabilities"]
+    assert bound["exposure_context_degradation"] == "complex"
+    assert free["exposure_context_degradation"] == "free"
+
+
+def test_surface_metrics_always_use_the_free_binder():
+    """SAP/A3D/charge patches are surface properties of the molecule itself, so they
+    must not move when the degradation convention changes."""
+    bound = score_structure(FIXTURE, degradation_context="complex", verbose=False)[0]
+    free = score_structure(FIXTURE, degradation_context="free", verbose=False)[0]
+    for col in ("sap_score", "a3d_score", "charge_patch_pos", "charge_patch_neg"):
+        assert bound[col] == pytest.approx(free[col]), col
+    assert bound["exposure_context_surface"] == free["exposure_context_surface"] == "free"
+
+
+def test_degradation_context_rejects_unknown_value():
+    with pytest.raises(ValueError):
+        score_structure(FIXTURE, degradation_context="bogus", verbose=False)

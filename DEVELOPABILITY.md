@@ -25,6 +25,29 @@ clinical-stage landscape:
 > calibrated on 52–65-residue binders), so treat absolute thresholds as
 > provisional and prefer *relative ranking within a campaign* over hard cutoffs.
 
+## Exposure conventions — which surface a metric is measured on
+
+Every exposure-derived column here is computed from solvent accessibility, and
+there are two defensible surfaces to compute it on. binderqc uses both, on
+purpose, and records which in `exposure_context_degradation` and
+`exposure_context_surface` so a table can be audited later.
+
+| Convention | What it is | Used by | Why |
+|---|---|---|---|
+| **free** | SASA of the binder alone | `sap_score`, `a3d_score`, `charge_patch_*`, `paratope_*`, `binder_bsa` | These are surface properties of the molecule itself, and their source definitions are written that way (Chennamsetty 2009, Kuriata 2019, Raybould 2019). Aggregation and self-association happen to the free binder in solution; a hydrophobic patch does not stop being one because a target is docked onto it. |
+| **complex** (default for degradation) | SASA with the target present, so a residue buried at the interface reads as buried | `sequence_liabilities` oxidation and deamidation/isomerization flags, terminus `*_relsasa` | Asks whether the site is reachable **while bound**. |
+
+The degradation checks are the only ones where both readings are genuinely
+useful, so they are an option rather than a decision baked in:
+`--degradation-context free` asks the other question — will this oxidise in the
+vial, before it ever meets the target. The two disagree exactly on interface
+residues. On the bundled 7JZU/LCB1 fixture, `complex` flags Met/Trp W4 and M36
+while `free` also flags M26, which is buried against the RBD.
+
+Pick `complex` when the molecule's exposure in its bound state is what you care
+about, `free` for shelf stability and formulation. Neither is a default that
+suits both, which is why the column says which one produced the row.
+
 ## Metric-by-metric
 
 | Metric (column) | Measures | Primary reference | Evidence | Use |
@@ -44,6 +67,7 @@ clinical-stage landscape:
 | `sequence_liabilities`: unpaired Cys | Free-thiol (scrambling/aggregation/conjugation) risk | in-silico PTM review, mAbs: [PMC8791605](https://pmc.ncbi.nlm.nih.gov/articles/PMC8791605/) | **Moderate** — odd-count heuristic; even counts can still expose a free thiol | Keep; refine with SG SASA |
 | `sequence_liabilities`: exposed Met/Trp oxidation | Solvent-exposed oxidation-prone residues (SASA-gated) | Met/Trp photooxidation predictor — solvent exposure is the dominant predictor: [PMC8060516](https://pmc.ncbi.nlm.nih.gov/articles/PMC8060516/) | **Moderate–Strong** — exposure-gating is the correct refinement | Keep; elevate severity for radioligand (RLT) candidates |
 | `sequence_liabilities`: histidine run (≥3) | Confounds IMAC purification; reads like an engineered affinity tag rather than a designed sequence | Practical filter rule, not a biophysical-degradation paper — sourced from Anthropic's scorpion-toxin binder campaign's own documented design filters (Claude Science et al. 2026) | **Practical, not biophysically validated here** — a purification/QC confound, not a stability or aggregation mechanism; sequence-only (no exposure concept applies) | Keep; report only, this is not a developability mechanism to gate on |
+| `epitope_contact_fraction`, `epitope_coverage` | Whether the design landed on the site it was asked to bind, against an epitope **declared** on the command line | Geometry; the distinction is standard precision/recall | **Definitional, not predictive** — it measures agreement with your own spec, so it is only as good as the spec | Keep; the only columns here that can say a design drifted to a different patch |
 | `epitope_glyco_occluded`, `epitope_glyco_sites` | Target N-X-[S/T] sequons (X≠P), SASA-aware, near interface | Gavel & von Heijne, Protein Eng 1990 [doi:10.1093/protein/3.5.433](https://doi.org/10.1093/protein/3.5.433) (necessary, not sufficient) | **Strong motif / Moderate for actual occupancy** — structure-aware check is the right refinement | Keep |
 | `interface_packing` | Heavy-atom contacts per 100 Å² BSA (CMS proxy) | proxy for Rosetta contact-molecular-surface | **Weak** — unvalidated proxy (already labelled in code) | Report, don't gate |
 | `approach_angle`, `epitope_planarity`, grippability | Pose / epitope-grippability heuristics | design heuristics | **Moderate** — designability, not developability | Report |

@@ -17,10 +17,12 @@ from .paths import gather_paths
 def _score_one(task):
     """Worker: score one file, returning rows (or a one-row error). Top-level so it
     is picklable for the process pool."""
-    path, binder_chains, target_chains, interface_cutoff, exposure_cutoff, verbose = task
+    (path, binder_chains, target_chains, interface_cutoff, exposure_cutoff, verbose,
+     epitope, degradation_context) = task
     try:
         return score_structure(path, binder_chains, target_chains,
-                               interface_cutoff, exposure_cutoff, verbose=verbose)
+                               interface_cutoff, exposure_cutoff, verbose=verbose,
+                               epitope=epitope, degradation_context=degradation_context)
     except Exception as e:  # noqa: BLE001 - keep the batch going, record the failure
         return [{"pdb": path, "error": str(e)}]
 
@@ -48,6 +50,17 @@ def main(argv=None):
                     help="heavy-atom dist (A) to call a binder residue interface (default 5.0)")
     ap.add_argument("--exposure-cutoff", type=float, default=0.25,
                     help="relSASA below which a terminus is buried (default 0.25)")
+    ap.add_argument("--epitope", default="",
+                    help="the target site the design was meant to hit, e.g. 'B:45,47,50-58' "
+                         "(chain prefix required). Adds epitope_contact_fraction and "
+                         "epitope_coverage: the only columns that can say the design "
+                         "landed on a different patch")
+    ap.add_argument("--degradation-context", choices=("complex", "free"), default="complex",
+                    help="exposure convention for the oxidation and deamidation checks: "
+                         "'complex' (default) asks whether the site is exposed while bound, "
+                         "'free' asks about the binder alone in solution. SAP, A3D and the "
+                         "charge patches are always on the free binder, as their definitions "
+                         "require")
     ap.add_argument("--out", default="binderqc.csv", help="output CSV path")
     ap.add_argument("-j", "--jobs", type=int, default=1,
                     help="parallel worker processes over a batch of files (default 1)")
@@ -72,8 +85,8 @@ def main(argv=None):
     target_chains = [c for c in args.target_chains.split(",") if c]
 
     verbose = args.jobs <= 1  # auto-guess printout only makes sense when sequential
-    tasks = [(p, binder_chains, target_chains, args.interface_cutoff, args.exposure_cutoff, verbose)
-             for p in paths]
+    tasks = [(p, binder_chains, target_chains, args.interface_cutoff, args.exposure_cutoff,
+              verbose, args.epitope, args.degradation_context) for p in paths]
     rows = []
     if args.jobs > 1 and len(tasks) > 1:
         from concurrent.futures import ProcessPoolExecutor

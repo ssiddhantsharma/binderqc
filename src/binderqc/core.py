@@ -83,8 +83,25 @@ def _chain_res_ids(array, chain_id):
 
 
 def _residue_relsasa(array, atom_sasa):
-    """{(chain, res_id): relative SASA}. SASA is over the whole complex, so a
-    residue buried at the interface reads as buried."""
+    """{(chain, res_id): relative SASA} from whichever SASA array you pass in.
+
+    binderqc deliberately uses TWO exposure conventions, and which one a metric
+    takes is a claim about where the liability happens, not a detail:
+
+      complex  SASA computed with the target present, so a residue buried at the
+               interface reads as buried. Correct for anything that happens to
+               the bound molecule.
+      free     SASA of the binder alone. Correct for anything that happens to the
+               binder in solution before or between binding events, and the
+               convention the aggregation literature defines its scores on
+               (Chennamsetty 2009 SAP, Kuriata 2019 A3D, Raybould 2019 patches
+               are all surface properties of the molecule itself).
+
+    Mixing them silently is the failure mode: a hydrophobic residue buried against
+    the target scores as safe under `complex` and as a liability under `free`, and
+    a table that does not say which it used cannot be audited. Every exposure-
+    derived column records its convention in `exposure_context_*`.
+    """
     res_sasa = struc.apply_residue_wise(array, atom_sasa, np.sum)
     res_starts = struc.get_residue_starts(array)
     rel = {}
@@ -447,6 +464,90 @@ def _target_interface_res(array, binder_chain, target_chains, cutoff):
     return sorted(hits)
 
 
+def parse_epitope(spec):
+    """Parse a declared epitope, "B:45,47,50-58" or "B:45+C:12", to {(chain, res_id)}.
+
+    Ranges are inclusive. A bare number without a chain prefix is rejected rather
+    than guessed at: a design run usually has one target chain today and two
+    tomorrow, and silently binding the spec to whichever chain happens to be first
+    is how an epitope definition rots without anyone noticing.
+    """
+    residues, chain = set(), None
+    if not spec or not str(spec).strip():
+        return residues
+    for block in str(spec).replace("|", "+").split("+"):
+        for token in block.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if ":" in token:
+                chain, token = (t.strip() for t in token.split(":", 1))
+                if not token:
+                    continue
+            if chain is None:
+                raise ValueError(
+                    f"epitope token {token!r} has no chain; write it as CHAIN:RESID "
+                    "(e.g. B:45 or B:45-58)")
+            if "-" in token.lstrip("-"):
+                lo, hi = token.split("-", 1) if not token.startswith("-") else (token, token)
+                try:
+                    lo_i, hi_i = int(lo), int(hi)
+                except ValueError as exc:
+                    raise ValueError(f"bad epitope range {token!r}") from exc
+                if hi_i < lo_i:
+                    lo_i, hi_i = hi_i, lo_i
+                residues.update((chain, r) for r in range(lo_i, hi_i + 1))
+            else:
+                try:
+                    residues.add((chain, int(token)))
+                except ValueError as exc:
+                    raise ValueError(f"bad epitope residue {token!r}") from exc
+    return residues
+
+
+def _epitope_agreement(array, target_chains, contacted, declared):
+    """Compare the epitope a design actually contacts with the one that was asked for.
+
+    Every other epitope column here is descriptive: it reports whatever patch the
+    complex happens to show. None of them can say the design landed on the wrong
+    site, because the site it landed on becomes the epitope they describe. A design
+    that drifted to a second patch can therefore pass every column in this table.
+    That is what this pair of numbers is for, and it needs an epitope supplied from
+    outside the structure.
+
+    Both are residue-level over the target residues in contact (`interface_cutoff`),
+    not contact-weighted -- consistent with the other epitope columns, and a count
+    of atom pairs would let one deeply buried residue outvote five shallow ones.
+
+      epitope_contact_fraction  share of contacted target residues that were declared
+                                (precision: did it stay on-site)
+      epitope_coverage          share of declared residues contacted
+                                (recall: how much of the site it used)
+
+    Reporting only the first would call a design that grips three residues of a
+    twenty-residue epitope a perfect hit. Declared residues absent from the
+    structure are counted and returned, because a typo in a residue number
+    otherwise inflates precision while quietly shrinking the denominator of
+    coverage.
+    """
+    if not declared:
+        return {}
+    present = {(str(c), int(r)) for c, r in zip(array.chain_id, array.res_id, strict=True)
+               if str(c) in set(target_chains)}
+    missing = sorted(declared - present)
+    resolved = declared & present
+    touched = set(contacted)
+    hit = touched & resolved
+    return {
+        "epitope_declared_n": len(declared),
+        "epitope_declared_missing": len(missing),
+        "epitope_contacted_n": len(touched),
+        "epitope_hit_n": len(hit),
+        "epitope_contact_fraction": (len(hit) / len(touched)) if touched else float("nan"),
+        "epitope_coverage": (len(hit) / len(resolved)) if resolved else float("nan"),
+    }
+
+
 def _approach_angle(binder_ca, paratope_centroid, epitope_centroid):
     """Angle (0-90 deg) between the binder's long axis and the paratope->epitope
     axis. Near 0 the binder points end-on into the target; near 90 it lies across
@@ -789,7 +890,8 @@ def _paratope_patches(binder_sub, binder_iso_sasa, interface_ids, reach=10.0):
 
 
 def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, chain_lens,
-                        relsasa, interface_cutoff, exposure_cutoff):
+                        relsasa, interface_cutoff, exposure_cutoff, declared_epitope=None,
+                        degradation_context="complex"):
     ordered_ids = _chain_res_ids(array, binder_chain)
     nterm_id, cterm_id = (ordered_ids[0], ordered_ids[-1]) if ordered_ids else (None, None)
     # one residue in from each end, for the chain-extension direction
@@ -804,6 +906,17 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     binder_mask = array.chain_id == binder_chain
     binder_sub = array[binder_mask]
     binder_iso_sasa = np.nan_to_num(struc.sasa(binder_sub), nan=0.0)  # once; shared by BSA/SAP/A3D
+    # The degradation checks ask about a chemical reaction on a solvent-exposed side
+    # chain, and whether the target is present changes the answer for every interface
+    # residue. Both readings are legitimate -- "will it oxidise while bound" vs "will it
+    # oxidise in the vial" -- so this is a choice the caller makes, not one hidden here.
+    if degradation_context == "free":
+        degradation_relsasa = _residue_relsasa(binder_sub, binder_iso_sasa)
+    elif degradation_context == "complex":
+        degradation_relsasa = relsasa
+    else:
+        raise ValueError(
+            f"degradation_context must be 'complex' or 'free', got {degradation_context!r}")
     binder_bsa = _binder_bsa(atom_sasa, binder_mask, binder_iso_sasa)
     n_hbonds = _count_interface_hbonds(array, binder_chain, target_chains)
     n_salt_bridges = _count_salt_bridges(array, binder_chain, target_chains)
@@ -837,8 +950,8 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
     # sequence-side developability + expression
     binder_seq = _binder_sequence(array, binder_chain)
     seqm = _sequence_metrics(binder_seq)
-    ox_sites = _exposed_oxidation(array, binder_chain, relsasa)
-    deamidation_sites = _exposed_deamidation_sites(array, binder_chain, relsasa)
+    ox_sites = _exposed_oxidation(array, binder_chain, degradation_relsasa)
+    deamidation_sites = _exposed_deamidation_sites(array, binder_chain, degradation_relsasa)
     liabilities = list(seqm["sequence_liabilities"])
     if ox_sites:
         liabilities.append("solvent-exposed Met/Trp (oxidation): " + ", ".join(ox_sites))
@@ -941,7 +1054,13 @@ def _score_binder_chain(array, atom_sasa, name, binder_chain, target_chains, cha
         "sequence_liabilities": liabilities_str,
         "warnings": "; ".join(warnings),
         "qc_pass": qc_pass,
+        # which exposure convention produced the exposure-derived columns, so a table
+        # read six months later does not have to guess (see _residue_relsasa)
+        "exposure_context_degradation": degradation_context,
+        "exposure_context_surface": "free",
         "binder_sequence": seqm["binder_sequence"],
+        # only present when an epitope was declared; see _epitope_agreement
+        **_epitope_agreement(array, target_chains, target_iface, declared_epitope or set()),
     }
 
 
@@ -1066,7 +1185,8 @@ def grippability_consensus(row, iara_epitope_score=None):
 def score_structure(path: str, binder_chains: "list[str] | None" = None,
                     target_chains: "list[str] | None" = None,
                     interface_cutoff: float = 5.0, exposure_cutoff: float = 0.25,
-                    verbose: bool = True) -> "list[dict]":
+                    verbose: bool = True, epitope: "str | None" = None,
+                    degradation_context: str = "complex") -> "list[dict]":
     """Score every binder chain in one structure file.
 
     binder_chains / target_chains are lists of chain ids. Leave binder_chains
@@ -1075,11 +1195,24 @@ def score_structure(path: str, binder_chains: "list[str] | None" = None,
     interface_cutoff is the heavy-atom contact distance in A; exposure_cutoff is
     the relSASA below which a terminus counts as buried.
 
+    degradation_context picks the exposure convention for the oxidation and
+    deamidation/isomerization checks: "complex" (default) asks whether the site is
+    exposed while bound, "free" asks about the binder alone in solution. The
+    aggregation and patch columns (SAP, A3D, charge patches) are always computed on
+    the free binder, because that is how their source definitions are written.
+
+    epitope optionally declares the target site the design was meant to hit, as
+    "B:45,47,50-58". Supplying it adds epitope_contact_fraction / epitope_coverage,
+    the only columns here that can tell you the design landed somewhere else; every
+    other epitope column describes whatever patch the structure shows.
+
     Returns one dict per binder chain, or a single {"pdb", "error"} dict if the
     requested chains aren't there.
     """
     binder_chains = list(binder_chains) if binder_chains else []
     target_chains = list(target_chains) if target_chains else []
+
+    declared_epitope = parse_epitope(epitope) if epitope else set()
 
     array = _load_protein(path)
     name = os.path.basename(path)
@@ -1108,6 +1241,7 @@ def score_structure(path: str, binder_chains: "list[str] | None" = None,
         else:
             targets = sorted(present - set(binders))
         rows.append(_score_binder_chain(
-            array, atom_sasa, name, bc, targets, chain_lens, relsasa, interface_cutoff, exposure_cutoff
+            array, atom_sasa, name, bc, targets, chain_lens, relsasa, interface_cutoff,
+            exposure_cutoff, declared_epitope, degradation_context
         ))
     return rows

@@ -47,10 +47,42 @@ guess the binder as the shortest chain (20-250 aa, printed for each file).
 | `--target-chains` | all non-binder | comma-separated target chain ids |
 | `--interface-cutoff` | `5.0` | heavy-atom contact distance (Å) |
 | `--exposure-cutoff` | `0.25` | relSASA below which a terminus is buried |
+| `--epitope` | off | the target site the design was meant to hit, e.g. `B:45,47,50-58`; adds `epitope_contact_fraction` and `epitope_coverage` |
+| `--degradation-context` | `complex` | exposure convention for the oxidation/deamidation flags: `complex` (exposed while bound) or `free` (binder alone in solution) |
 | `--out` | `binderqc.csv` | output CSV path |
 | `-j`, `--jobs` | `1` | worker processes to score a batch of files in parallel |
 | `--fasta` | off | also write the QC-passing binders to this FASTA |
 | `--self-fold` | off | predicted binder homodimer(s), a file or a directory matched by filename stem: adds where the binder self-associates relative to its paratope |
+
+### Did it bind where you asked?
+
+Every other epitope column describes whatever patch the structure happens to
+show, so none of them can tell you a design drifted. Declare the intended site
+and two columns can:
+
+```bash
+binderqc --epitope "B:417,445,446,449,453,455,456" complex.pdb
+```
+
+`epitope_contact_fraction` is the share of contacted target residues that were
+declared (did it stay on-site) and `epitope_coverage` the share of the declared
+site it actually touched (how much of it it used). Both are reported because
+either alone misleads: a design gripping three residues of a twenty-residue
+epitope scores a perfect fraction. Declared residues absent from the structure
+are counted in `epitope_declared_missing` rather than quietly dropped, since a
+mistyped residue number otherwise flatters both numbers. Chain prefixes are
+required — a bare residue number is rejected rather than guessed at.
+
+### Two exposure conventions, on purpose
+
+SAP, A3D and the charge patches are measured on the **free** binder, because
+they are surface properties of the molecule and their source definitions are
+written that way. The oxidation and deamidation flags default to the **complex**,
+asking whether a site is reachable while bound. `--degradation-context free`
+asks the other question — will it oxidise in the vial — and the two disagree
+exactly on interface residues. Each row records which convention produced it in
+`exposure_context_degradation` / `exposure_context_surface`; see
+[DEVELOPABILITY.md](DEVELOPABILITY.md).
 
 Scoring is CPU-only: no folding, no GPU, no network. Files in a batch are
 independent, so `-j` scales near-linearly across cores on large directories.
