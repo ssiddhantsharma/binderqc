@@ -12,8 +12,11 @@ drive the aggregation metrics.
 """
 
 import math
+from pathlib import Path
 
-from binderqc.core import _A3V, _BLACK_MOULD
+import pytest
+
+from binderqc.core import _A3D_REF_MAX_ASA, _A3V, _BLACK_MOULD
 
 # Twenty canonical amino acids, so a dropped or duplicated key is caught.
 _AA = set("ACDEFGHIKLMNPQRSTVWY")
@@ -73,6 +76,51 @@ def test_the_scales_keep_the_orderings_their_papers_report():
     assert all(0.0 <= v <= 1.0 for v in _BLACK_MOULD.values())
     # Leu and Ile are equal on this scale -- a real feature, easy to "fix" by mistake.
     assert math.isclose(_BLACK_MOULD["L"], _BLACK_MOULD["I"])
+
+
+def test_a3d_reference_areas_match_freesasa_naccess():
+    """The naccess reference max-ASA Aggrescan3D scores against.
+
+    These live in freesasa's classifier_naccess.c (MIT, (c) Simon Mitternacht),
+    not in naccess.config -- loading the config alone gives NaN relative areas,
+    which is exactly the trap that hid the original bug. Using Tien 2013 here
+    instead (the table every other column uses, ~25% larger) made the port run
+    about 30% hot: Pearson r against the reference was 0.896 rather than 0.9996.
+    tests/a3d_correctness.py measures that end to end.
+    """
+    reference = {
+        "ALA": 102.31, "ARG": 232.08, "ASN": 137.97, "ASP": 134.50, "CYS": 127.09,
+        "GLN": 172.15, "GLU": 166.09, "GLY": 71.50, "HIS": 173.15, "ILE": 166.62,
+        "LEU": 159.40, "LYS": 192.51, "MET": 185.85, "PHE": 193.15, "PRO": 131.26,
+        "SER": 109.82, "THR": 131.81, "TRP": 226.33, "TYR": 206.14, "VAL": 146.03,
+    }
+    assert set(_A3D_REF_MAX_ASA) == set(reference)
+    for res, want in reference.items():
+        assert math.isclose(_A3D_REF_MAX_ASA[res], want, abs_tol=1e-9), \
+            f"{res}: {_A3D_REF_MAX_ASA[res]} != {want}"
+
+
+def test_a3d_tracks_the_reference_tool_on_the_bundled_structure():
+    """Pin a3d_score/a3d_total_positive to what real Aggrescan3D 1.0.2 reports.
+
+    Reference values produced by tests/a3d_correctness.py on 7JZU chain A:
+    peak 0.1393, total_positive 0.1700. Nothing else in the suite would notice
+    this metric moving -- when the reference table was wrong these were 0.533
+    and 0.900, roughly 4-6x the reference, and every test still passed.
+    """
+    import biotite.structure as struc
+    import biotite.structure.io.pdb as pdbio
+    import numpy as np
+
+    from binderqc.core import _a3d_score
+
+    path = Path(__file__).parent / "data" / "7JZU_LCB1_RBD.pdb"
+    s = pdbio.PDBFile.read(str(path)).get_structure(model=1)
+    s = s[struc.filter_amino_acids(s) & ~s.hetero]
+    s = s[s.chain_id == "A"]
+    peak, total = _a3d_score(s, np.nan_to_num(struc.sasa(s), nan=0.0))
+    assert peak == pytest.approx(0.1393, rel=0.15), f"a3d peak drifted: {peak}"
+    assert total == pytest.approx(0.1700, rel=0.15), f"a3d total drifted: {total}"
 
 
 def test_a_typo_would_actually_be_caught():

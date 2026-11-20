@@ -16,3 +16,6 @@ dist/
 .pytest_cache/
 uv.lock
 .venv/
+
+# scratch for tests/a3d_correctness.py (downloaded wheel + PDBs)
+tests/_a3d_work/

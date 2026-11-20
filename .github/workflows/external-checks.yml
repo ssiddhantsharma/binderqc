@@ -1,0 +1,65 @@
+name: External checks
+
+# The two correctness checks that need the network, so they cannot live in CI:
+#   tests/pisa_correctness.py  -- interface area vs PDBePISA (RCSB + PDBePISA)
+#   tests/a3d_correctness.py   -- a3d_* vs real Aggrescan3D 1.0.2 (PyPI + RCSB)
+#
+# They are gated, not just run: each exits 1 if its correlation falls below a
+# floor, and 2 if too few structures scored to conclude (an external service being
+# down is not a pass). Job summary and figures are published either way.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"     # Mondays 05:17 UTC
+  workflow_dispatch:
+  push:
+    paths:                   # also run when the scored code or a check changes
+      - "src/binderqc/core.py"
+      - "tests/pisa_correctness.py"
+      - "tests/a3d_correctness.py"
+
+permissions:
+  contents: read
+
+jobs:
+  external:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false       # one flaky external service must not hide the other
+      matrix:
+        check: [pisa_correctness, a3d_correctness]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[validation]" freesasa
+
+      - name: Run ${{ matrix.check }}
+        id: run
+        run: |
+          set +e
+          python "tests/${{ matrix.check }}.py" 2>&1 | tee out.txt
+          code=${PIPESTATUS[0]}
+          {
+            echo "### ${{ matrix.check }}"
+            echo ""
+            echo '```'
+            tail -n 12 out.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = "2" ]; then
+            echo "::warning::${{ matrix.check }} was inconclusive (external service unavailable)"
+            exit 0
+          fi
+          exit $code
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ matrix.check }}
+          path: |
+            tests/*.png
+            tests/*.csv
+          if-no-files-found: ignore

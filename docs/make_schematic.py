@@ -29,7 +29,7 @@ PANEL = [
                    ("H-bonds / salt bridges", "17 / 2"), ("packing", "14.5")]),
     ("Pose", [("approach angle", "86°  (across)")]),
     ("Grippability", [("epitope planarity", "3.21 Å")]),
-    ("Developability", [("SAP peak / A3D load", "0.33 / 0.90"),
+    ("Developability", [("SAP peak / A3D load", "0.33 / 0.15"),
                         ("charge patch (+)", "1.78"),
                         ("net charge · pI", "−8.0 · 4.2")]),
 ]

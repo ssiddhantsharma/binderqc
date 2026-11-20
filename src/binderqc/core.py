@@ -750,6 +750,20 @@ _A3V = {
 }
 
 
+# naccess reference max-ASA, the values Aggrescan3D's own freeSASA call uses for
+# relative SASA. They are compiled into freesasa's classifier_naccess.c rather than
+# written in naccess.config. Taken from freesasa 2.0.1 (MIT, (c) Simon Mitternacht).
+# Kept separate from _REF_MAX_ASA (Tien 2013), which every other column uses: Tien
+# is ~25% larger, which pushed every partially-exposed residue down a band and made
+# the port run ~30% hot against the reference. See tests/a3d_correctness.py.
+_A3D_REF_MAX_ASA = {
+    "ALA": 102.31, "ARG": 232.08, "ASN": 137.97, "ASP": 134.50, "CYS": 127.09,
+    "GLN": 172.15, "GLU": 166.09, "GLY": 71.50, "HIS": 173.15, "ILE": 166.62,
+    "LEU": 159.40, "LYS": 192.51, "MET": 185.85, "PHE": 193.15, "PRO": 131.26,
+    "SER": 109.82, "THR": 131.81, "TRP": 226.33, "TYR": 206.14, "VAL": 146.03,
+}
+
+
 def _a3d_score(binder_sub, binder_iso_sasa, max_dist=10.0):
     """Aggrescan3D score (Zambrano 2015), ported faithfully from Aggrescan3D 1.0.2,
     on the ISOLATED binder. Per residue (CA as centre):
@@ -765,14 +779,16 @@ def _a3d_score(binder_sub, binder_iso_sasa, max_dist=10.0):
       total_positive  - sum of positive agg_fin = whole-surface aggregation load;
                         this is the value the Aggrescan3D server reports as "A3D score".
 
-    a3v scale + all constants are taken verbatim from Aggrescan3D 1.0.2. One
-    faithfulness caveat vs the reference tool: RSA here is whole-residue relative
-    SASA from biotite with the Tien 2013 max-ASA reference, whereas A3D uses freeSASA
-    with naccess radii -- absolute numbers track real A3D closely but are not
-    bit-identical. Validated against real Aggrescan3D 1.0.2 on 40 folded structures:
-    Pearson r=0.92, mean port/real ratio 0.95. Complements SAP (which uses a
-    hydrophobicity scale + patch sum); A3D is calibrated on aggregation data and
-    thresholds out buried residues."""
+    a3v scale + all constants are taken verbatim from Aggrescan3D 1.0.2, and RSA
+    uses the same naccess reference max-ASA the reference tool does. Remaining
+    difference: absolute SASA comes from biotite rather than freeSASA with naccess
+    radii, so values track real A3D closely but are not bit-identical.
+
+    Measured against real Aggrescan3D 1.0.2 on 40 single-chain structures by
+    tests/a3d_correctness.py: a3d_score Pearson r=0.9996 (mean ratio 0.99, median
+    relative error 0.9%), a3d_total_positive r=0.9998.
+    Complements SAP (which uses a hydrophobicity scale + patch sum); A3D is
+    calibrated on aggregation data and thresholds out buried residues."""
     sub = binder_sub
     if len(sub) == 0:
         return float("nan"), float("nan")
@@ -782,7 +798,7 @@ def _a3d_score(binder_sub, binder_iso_sasa, max_dist=10.0):
     for k, s in enumerate(starts):
         name3 = str(sub.res_name[s])
         aa = _THREE_TO_ONE.get(name3, "X")
-        ref = _REF_MAX_ASA.get(name3, 0.0)
+        ref = _A3D_REF_MAX_ASA.get(name3, 0.0)
         rid = int(sub.res_id[s])
         m_ca = (sub.res_id == rid) & (sub.atom_name == "CA")
         if aa not in _A3V or not m_ca.any():

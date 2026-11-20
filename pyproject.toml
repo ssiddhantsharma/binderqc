@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "binderqc"
-version = "0.7.1"
+version = "0.8.0"
 description = "Quality-control and tag-site scoring for designed protein binders, from a predicted complex"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
-validation = ["matplotlib", "scipy"]  # for tests/pisa_correctness.py (network benchmark)
+validation = ["matplotlib", "scipy", "freesasa"]  # tests/pisa_correctness.py + tests/a3d_correctness.py (network)
 docs = ["playwright", "matplotlib"]   # for docs/render_structure.py + make_schematic.py (figures)
 
 [project.scripts]
@@ -43,6 +43,7 @@ exclude = ["docs/*.png", "tests/*.png"]
 
 [tool.ruff]
 line-length = 100
+exclude = ["tests/_a3d_work"]   # downloaded reference tool, not ours
 
 [tool.ruff.lint]
 # F=pyflakes bugs, I=import-sort, B=bugbear footguns, SIM=simplify, UP=pyupgrade.

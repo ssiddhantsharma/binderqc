@@ -140,7 +140,7 @@ on antibody Fv surfaces or on 52–65-residue binders and do not transfer cleanl
 | group | columns | note |
 |---|---|---|
 | aggregation | `sap_score`, `sap_total`, `sap_per_res` | `sap_total` scales with length, so `sap_per_res` is the comparable one |
-| aggregation | `a3d_score`, `a3d_total_positive` | pure-Python Aggrescan3D 1.0.2 port, Pearson r≈0.92 vs the reference tool |
+| aggregation | `a3d_score`, `a3d_total_positive` | pure-Python Aggrescan3D 1.0.2 port; Pearson r = 0.9996 vs the reference tool on 40 structures ([`tests/a3d_correctness.py`](tests/a3d_correctness.py)) |
 | surface charge | `charge_patch_pos`, `charge_patch_neg` | strongest exposed like-charge clusters (Raybould et al. 2019) — what net charge and pI miss, and what drives viscosity |
 | paratope-scoped | `paratope_hydrophobicity`, `paratope_charge` | is the *interface itself* sticky or charge-clumped |
 | nonspecific stickiness | `net_charge`, `lys_arg_pct` | whole-binder, not paratope. Of 25 measures tested against BVP-ELISA and ovalbumin polyreactivity (211 designs, two CROs) these correlated best: ρ=−0.57 and ρ=0.50 |
@@ -179,14 +179,25 @@ and salt bridges … consistent with the subnanomolar affinities". Cao et al.,
 *De novo design of picomolar SARS-CoV-2 miniprotein inhibitors*, Science 370,
 426-431 (2020), [doi:10.1126/science.abd9909](https://doi.org/10.1126/science.abd9909).
 
-`tests/pisa_correctness.py` is a separate script, not part of the unit tests. It
-downloads 18 public complexes from RCSB and PDBePISA and checks the interface area
-against PISA (r ~ 1.0, about 1% median error):
+Two scripts check the numbers against their reference implementations. Both need
+the network, so neither is part of the pytest suite:
 
 ```bash
 pip install -e ".[validation]"
-python tests/pisa_correctness.py
+python tests/pisa_correctness.py   # interface area vs PDBePISA, 18 complexes
+python tests/a3d_correctness.py    # a3d_* vs real Aggrescan3D 1.0.2, 40 structures
 ```
+
+`pisa_correctness.py` gets r ~ 1.0, about 1% median error. `a3d_correctness.py`
+downloads the Aggrescan3D wheel, imports its actual scoring code and runs it on the
+same structures: Pearson r = 0.9996 for `a3d_score` and 0.9998 for
+`a3d_total_positive`, 0.9% median relative error. Aggrescan3D is not vendored —
+it is distributed "free for non-commercial users", which is not MIT-compatible.
+The script downloads the wheel, reads its scoring code and constants, and runs them.
+
+Both run weekly in CI (`.github/workflows/external-checks.yml`),
+which fails on a correlation regression and reports separately when an external
+service was unreachable, so a quiet outage is not mistaken for a pass.
 
 ## Figures
 

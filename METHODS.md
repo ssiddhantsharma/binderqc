@@ -130,10 +130,18 @@ verbatim from Aggrescan3D 1.0.2 and are regression-tested
 (`tests/test_constant_tables.py`). The scale was checked against upstream's own
 `aggrescan/data/matrices/aggrescan.mat` on 2026-11-20 — **zero mismatches across
 all twenty residues**. That file is not vendored here, because Aggrescan3D is
-distributed "free for non-commercial users" and binderqc is MIT. *Faithfulness caveat:* RSA here is
-whole-residue relative SA from biotite with Tien max-ASA, whereas A3D uses
-freeSASA with naccess radii — absolute values track the reference closely but are
-not identical.
+distributed "free for non-commercial users" and binderqc is MIT.
+
+RSA for this column uses the **naccess** reference max-ASA that Aggrescan3D's own
+freeSASA call uses (`_A3D_REF_MAX_ASA`), not the Tien 2013 table the rest of the
+tool uses. That distinction is load-bearing: Tien's values are ~25% larger, which
+moves every partially-exposed residue down a band and made the port run about 30%
+hot. *Remaining caveat:* absolute SASA still comes from biotite rather than
+freeSASA with naccess radii, so values are close but not identical.
+
+Measured end to end against real Aggrescan3D 1.0.2 on 40 single-chain structures
+(`tests/a3d_correctness.py`): Pearson r = 0.9996 for `a3d_score`, 0.9998 for
+`a3d_total_positive`, median relative error 0.9%, mean ratio 0.99.
 
 **`charge_patch_pos` / `charge_patch_neg`** — TAP-style surface charge patches
 (Raybould et al. 2019). Per residue, the SASA-weighted formal charge summed over

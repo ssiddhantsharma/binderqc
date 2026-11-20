@@ -18,6 +18,7 @@ two de novo minibinders (7JZU, 7JZM). They're all cases with a single clean
 biological 2-chain interface; homodimers and multi-copy assemblies (where "the
 interface" is ambiguous) are deliberately left out.
 """
+import sys
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -74,7 +75,25 @@ def interface_area(path, chain_a, chain_b):
     return {"our_area": (a + b) / 2, "binder_bsa": smaller}
 
 
-def main():
+def _gate(name, r, n, min_r, min_n):
+    """Exit status for an unattended run: 0 pass, 1 regression, 2 inconclusive.
+
+    A network check that scored too few structures has NOT passed -- the external
+    service may simply be down -- so it gets its own status rather than a green
+    tick, and is reported either way.
+    """
+    if n < min_n:
+        print(f"INCONCLUSIVE: only {n} of the set scored (need {min_n}); "
+              "external service may be unavailable. Not treating as a pass.")
+        return 2
+    if r < min_r:
+        print(f"REGRESSION: {name} r={r:.4f} is below the floor of {min_r}")
+        return 1
+    print(f"OK: {name} r={r:.4f} >= {min_r} on n={n}")
+    return 0
+
+
+def main(min_r=0.95, min_n=12):
     rows = []
     for pdb in PDBS:
         mi = pisa_main_interface(pdb)
@@ -121,7 +140,8 @@ def main():
     fig.tight_layout()
     fig.savefig(HERE / "pisa_correctness.png", dpi=160, facecolor="white")
     print(f"wrote {HERE/'pisa_correctness.png'}")
+    return _gate("interface area vs PISA", float(r), len(rows), min_r, min_n)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
