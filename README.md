@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/assets/icon.svg" alt="" width="42" align="absmiddle">&nbsp;binderqc
+  <img src="https://raw.githubusercontent.com/ssiddhantsharma/binderqc/main/docs/assets/icon.svg" alt="" width="42" align="absmiddle">&nbsp;binderqc
 </h1>
 
 <p align="center">
@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/schematic.png" width="860"
+  <img src="https://raw.githubusercontent.com/ssiddhantsharma/binderqc/main/docs/schematic.png" width="860"
        alt="From a predicted binder-target complex, binderqc reports interface, pose, grippability, tag site, and developability">
 </p>
 

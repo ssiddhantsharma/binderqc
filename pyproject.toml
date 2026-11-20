@@ -36,6 +36,11 @@ Homepage = "https://github.com/ssiddhantsharma/binderqc"
 [tool.hatch.build.targets.wheel]
 packages = ["src/binderqc"]
 
+[tool.hatch.build.targets.sdist]
+# The README renders its images from raw.githubusercontent, so the PNGs are 2.5 MB
+# of a 2.6 MB sdist that nothing building or testing the package ever reads.
+exclude = ["docs/*.png", "tests/*.png"]
+
 [tool.ruff]
 line-length = 100
 
