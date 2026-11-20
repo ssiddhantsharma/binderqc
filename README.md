@@ -31,18 +31,16 @@ calibrated on Fv surfaces), scattered across web servers that take one structure
 a time, or bundled into Rosetta. **binderqc puts the physical checks in one
 CPU-only, model-agnostic package**: hand it a finished complex from any source —
 AlphaFold, Protenix, Boltz, Chai, a crystal structure — and it returns an auditable
-panel per binder chain, with no GPU, no network, and no trained model.
+panel per binder chain, with no GPU, no network, and no trained model. It is for
+people deciding which designs to order, and for anyone wanting a physical second
+opinion on a prediction that already looks confident.
 
-It is for people designing or triaging protein binders who need to decide what to
-order, and for anyone who wants a physical second opinion on a prediction that
-already looks confident. Every number is defined in [METHODS.md](METHODS.md),
-including where an implementation departs from the source it is based on, so a
-reported value can be checked rather than trusted.
-
-binderqc deliberately does **not** compute ipSAE or other confidence metrics: those
-need PAE rather than coordinates, that space is well served, and staying
-model-agnostic is what lets the same panel compare structures from different
-predictors.
+[METHODS.md](METHODS.md) defines every column — the formula, its source, and where
+this implementation departs from that source — so a reported value can be checked
+rather than trusted. binderqc deliberately does **not** compute ipSAE or other
+confidence metrics: those need PAE rather than coordinates, that space is well
+served, and staying model-agnostic is what lets one panel compare structures from
+different predictors.
 
 ## Install
 
@@ -111,9 +109,7 @@ see [METHODS.md](METHODS.md#the-two-exposure-conventions).
 
 ## What it reports
 
-Per binder chain. Every number is CPU-only — no folding, no GPU, no network.
-**[METHODS.md](METHODS.md) defines every column**: the formula, the source it comes
-from, and where this implementation departs from it.
+Per binder chain, all CPU-only. Formulas and sources: [METHODS.md](METHODS.md).
 
 **Interface** — buried surface area, interface residue count, H-bonds, salt bridges,
 contact-packing density, and buried unsatisfied polar atoms (`buns_interface`,
@@ -130,13 +126,13 @@ cross-checks this physical read against a learned target-side score and returns
 **Tag site** — recommended terminus (N/C) with the numbers behind it: relative SASA,
 CA–CA distance to the paratope, orientation, and a terminal cysteine's SG SASA.
 
-**Self-association** (`--self-fold`) — given a predicted binder homodimer, how much of the
-paratope the self-interface buries, and whether that is more than a patch of that size
-would bury sitting anywhere at random. Interface PAE, ipTM and ipSAE say whether a
-self-interface is predicted; they cannot say *where*. Away from the paratope that is a
-formulation problem; through it, it competes with target binding. `self_verdict` bands at
-0.5 and 0.2 — a stated convention, not a fitted cutoff: no dataset of de-novo binders with
-measured self-association exists to calibrate on.
+**Self-association** (`--self-fold`) — given a predicted binder homodimer, how much of
+the paratope the self-interface buries, and whether that exceeds what a patch of that
+size would bury at random. Interface PAE, ipTM and ipSAE say whether a self-interface is
+predicted; they cannot say *where*. Away from the paratope that is a formulation problem;
+through it, it competes with target binding. `self_verdict` bands at 0.5 and 0.2 are a
+stated convention, not a fitted cutoff — no dataset of de-novo binders with measured
+self-association exists to calibrate on.
 
 **Developability** — reported numbers, not gates. Published thresholds here were calibrated
 on antibody Fv surfaces or on 52–65-residue binders and do not transfer cleanly.
@@ -171,19 +167,17 @@ pip install -e ".[test]"
 pytest
 ```
 
-Tests run against a bundled example, PDB 7JZU (the LCB1 minibinder on the
-SARS-CoV-2 RBD). LCB1 comes from Cao et al. (2020), which frames the problem
-binderqc targets: the bottleneck is selecting good binders, not designing them.
+Tests run against a bundled example, PDB 7JZU — the LCB1 minibinder on the
+SARS-CoV-2 RBD, from Cao et al. (2020), which states the problem binderqc exists
+for: the bottleneck is "not in the de novo design of proteins with shape and
+chemical complementarity to the target surface, but in recognizing the best
+candidates."
 
-> "…not in the de novo design of proteins with shape and chemical complementarity
-> to the target surface, but in recognizing the best candidates."
-
-In that work LCB1 buries ~1,000 Å² and forms "multiple hydrogen bonds and salt
-bridges … consistent with the subnanomolar affinities". binderqc on 7JZU agrees:
-1021 Å² buried area (Cao reports ~1,000 Å²), plus 2 salt bridges and 17 interface
-polar contacts. See Cao et al., *De novo design of picomolar SARS-CoV-2
-miniprotein inhibitors*, Science 370, 426-431 (2020),
-[doi:10.1126/science.abd9909](https://doi.org/10.1126/science.abd9909).
+binderqc's numbers agree with that paper's: 1021 Å² buried (Cao reports ~1,000 Å²),
+2 salt bridges and 17 interface polar contacts against its "multiple hydrogen bonds
+and salt bridges … consistent with the subnanomolar affinities". Cao et al.,
+*De novo design of picomolar SARS-CoV-2 miniprotein inhibitors*, Science 370,
+426-431 (2020), [doi:10.1126/science.abd9909](https://doi.org/10.1126/science.abd9909).
 
 `tests/pisa_correctness.py` is a separate script, not part of the unit tests. It
 downloads 18 public complexes from RCSB and PDBePISA and checks the interface area
@@ -196,31 +190,24 @@ python tests/pisa_correctness.py
 
 ## Figures
 
-The complex in the banner is a real render, not a drawing, and the numbers beside
-it are this structure's real `score_structure` row rather than illustrative values.
-Rebuild the banner with `python docs/make_schematic.py`.
+The banner is a real render and the numbers beside it are 7JZU's actual
+`score_structure` row, not illustrative values. Rebuild it with
+`python docs/make_schematic.py`.
 
-There are two renderers behind it. The banner uses `docs/render_chimenodes.cxc`,
-which needs ChimeraX plus the [chimenodes](https://github.com/anirudhbhashyam/chimenodes)
-bundle and a real OpenGL context, so it has to go through the GUI app:
+`docs/render_structure.py` renders any PDB/CIF headlessly via 3Dmol.js and is
+reusable for your own figures (`pip install -e ".[docs]"`). The banner itself
+uses [chimenodes](https://github.com/anirudhbhashyam/chimenodes); see the header
+of `docs/render_chimenodes.cxc` for why that one cannot run in CI.
 
-```bash
-cd <repo root>
-open -W -a /Applications/ChimeraX-<ver>.app --args \
-  --cmd "cd $PWD" --script "$PWD/docs/render_chimenodes.cxc"
-```
+## Contributing
 
-`docs/render_structure.py` is the dependency-light fallback that does run headless
-and in CI: a cartoon under a translucent surface (binder blue, target grey) via
-3Dmol.js in headless Chromium. It works on any PDB/CIF, so you can reuse it for
-your own figures:
+Bug reports, questions and patches are all welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to report a problem, what a good
+reproducer looks like, and how to run the tests.
 
-```bash
-pip install -e ".[docs]" && python -m playwright install chromium
-python docs/render_structure.py complex.pdb A B out.png   # structure, binder chain, target chain, output
-```
+## Citing
 
-Point `STRUCTURE` at the top of `make_schematic.py` at whichever render you have.
+[CITATION.cff](CITATION.cff), or the Zenodo DOI in the badge above.
 
 ## License
 
