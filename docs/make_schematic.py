@@ -18,6 +18,9 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 TEAL, INK, SUB, RULE = "#14726a", "#14202a", "#5b6b73", "#dde3e7"
 HERE = os.path.dirname(os.path.abspath(__file__))
+# The chimenodes render is the hero. render_structure.py writes structure.png as
+# the CI-reproducible fallback; swap the name here to use that instead.
+STRUCTURE = "structure_chimenodes.png"
 
 # 7JZU chain A (LCB1) against chain B (RBD), from score_structure. Regenerate with:
 #   score_structure("tests/data/7JZU_LCB1_RBD.pdb", ["A"], ["B"])[0]
@@ -33,7 +36,11 @@ PANEL = [
 
 
 def _load_trimmed(path):
+    """Composite onto white (the chimenodes render is genuinely transparent) and trim."""
     img = plt.imread(path)
+    if img.ndim == 3 and img.shape[2] == 4:
+        a = img[..., 3:4]
+        img = img[..., :3] * a + 1.0 * (1 - a)
     rgb = img[..., :3] if img.ndim == 3 else np.stack([img] * 3, -1)
     nonwhite = np.any(rgb < 0.96, axis=2)
     ys, xs = np.where(nonwhite)
@@ -46,8 +53,8 @@ def _load_trimmed(path):
 fig = plt.figure(figsize=(13, 5.6), facecolor="white")
 
 # ---- structure ----------------------------------------------------------
-ax = fig.add_axes([0.005, 0.07, 0.44, 0.88])
-ax.imshow(_load_trimmed(os.path.join(HERE, "structure.png")))
+ax = fig.add_axes([0.0, 0.05, 0.43, 0.92])
+ax.imshow(_load_trimmed(os.path.join(HERE, STRUCTURE)))
 ax.axis("off")
 ax.text(0.5, -0.012, "7JZU   ·   LCB1 minibinder (blue) + SARS-CoV-2 RBD (grey)",
         transform=ax.transAxes, ha="center", va="top", fontsize=9.5, color=SUB)

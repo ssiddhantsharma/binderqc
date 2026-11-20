@@ -196,15 +196,31 @@ python tests/pisa_correctness.py
 
 ## Figures
 
-The complex in the banner is a real render, not a drawing. `docs/render_structure.py`
-draws a cartoon under a translucent molecular surface (binder blue, target grey)
-from actual coordinates, using 3Dmol.js in headless Chromium. It works on any
-PDB/CIF, so you can reuse it for your own figures:
+The complex in the banner is a real render, not a drawing, and the numbers beside
+it are this structure's real `score_structure` row rather than illustrative values.
+Rebuild the banner with `python docs/make_schematic.py`.
+
+There are two renderers behind it. The banner uses `docs/render_chimenodes.cxc`,
+which needs ChimeraX plus the [chimenodes](https://github.com/anirudhbhashyam/chimenodes)
+bundle and a real OpenGL context, so it has to go through the GUI app:
+
+```bash
+cd <repo root>
+open -W -a /Applications/ChimeraX-<ver>.app --args \
+  --cmd "cd $PWD" --script "$PWD/docs/render_chimenodes.cxc"
+```
+
+`docs/render_structure.py` is the dependency-light fallback that does run headless
+and in CI: a cartoon under a translucent surface (binder blue, target grey) via
+3Dmol.js in headless Chromium. It works on any PDB/CIF, so you can reuse it for
+your own figures:
 
 ```bash
 pip install -e ".[docs]" && python -m playwright install chromium
 python docs/render_structure.py complex.pdb A B out.png   # structure, binder chain, target chain, output
 ```
+
+Point `STRUCTURE` at the top of `make_schematic.py` at whichever render you have.
 
 ## License
 

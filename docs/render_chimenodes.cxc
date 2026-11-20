@@ -1,0 +1,35 @@
+# Hero render for the README: 7JZU with the MolecularNodes-style look from
+# chimenodes (https://github.com/anirudhbhashyam/chimenodes).
+#
+#   cd <repo root>
+#   open -W -a /Applications/ChimeraX-<ver>.app --args \
+#     --cmd "cd $PWD" --script "$PWD/docs/render_chimenodes.cxc"
+#
+# Both the --cmd and the absolute --script are load-bearing. `open` does not
+# pass the shell's working directory to the app, so without `--cmd "cd $PWD"`
+# the relative paths below fail with "No such file/path: tests/data/...", and
+# a relative --script fails before the script is even read.
+#
+# Two things make this NOT runnable in CI, which is why render_structure.py stays:
+#   - chimenodes needs an OpenGL 3.3 core context, and ChimeraX --offscreen on
+#     macOS does not provide one ("could not enable rendering pipeline"), so it
+#     has to go through the GUI app via `open -W`.
+#   - it needs ChimeraX and the chimenodes bundle installed locally.
+#
+# The preset owns the background, so `set bgColor` has no effect here. The saved
+# PNG is genuinely transparent (alpha 0 over ~89% of it); the warm tint you see
+# in a viewer is the RGB under those transparent pixels. make_schematic.py
+# composites it onto white.
+open tests/data/7JZU_LCB1_RBD.pdb
+hide atoms
+show cartoon
+color /B #c2c8cd
+color /A #2f7fc0
+chimenodes preset mn_default
+view
+turn y -25
+turn x 10
+turn z -62
+zoom 0.88
+save docs/structure_chimenodes.png width 2400 height 1500 supersample 3 transparentBackground true
+exit
