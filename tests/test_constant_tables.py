@@ -29,6 +29,13 @@ def test_a3v_matches_aggrescan3d_1_0_2_verbatim():
 
     Transcribed independently of the dict under test, so this fails on a typo in
     either copy rather than agreeing with itself.
+
+    Checked against upstream directly on 2026-11-20: the Aggrescan3D 1.0.2 wheel
+    was downloaded from PyPI and `aggrescan/data/matrices/aggrescan.mat` parsed,
+    giving **zero mismatches** against `_A3V` across all twenty residues. That
+    file is NOT vendored here: Aggrescan3D is distributed "free for
+    non-commercial users", which is not an open licence and not MIT-compatible,
+    so the reference below stays a transcription rather than a copy.
     """
     reference = {
         "I": 1.9136, "F": 1.8456, "V": 1.6856, "L": 1.4716, "Y": 1.2506,

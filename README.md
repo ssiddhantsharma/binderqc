@@ -19,6 +19,31 @@
        alt="From a predicted binder-target complex, binderqc reports interface, pose, grippability, tag site, and developability">
 </p>
 
+## Why this exists
+
+A de novo binder that folds and scores well in silico can still fail for physical
+reasons a confidence metric cannot see: an interface too small to hold, a paratope
+that will stick to itself, an aggregation-prone surface, a conjugation site pointing
+into the target. Those questions are answered by coordinates, not by ipTM or PAE.
+
+Most tooling for them is either locked to antibodies (TAP's thresholds are
+calibrated on Fv surfaces), scattered across web servers that take one structure at
+a time, or bundled into Rosetta. **binderqc puts the physical checks in one
+CPU-only, model-agnostic package**: hand it a finished complex from any source —
+AlphaFold, Protenix, Boltz, Chai, a crystal structure — and it returns an auditable
+panel per binder chain, with no GPU, no network, and no trained model.
+
+It is for people designing or triaging protein binders who need to decide what to
+order, and for anyone who wants a physical second opinion on a prediction that
+already looks confident. Every number is defined in [METHODS.md](METHODS.md),
+including where an implementation departs from the source it is based on, so a
+reported value can be checked rather than trusted.
+
+binderqc deliberately does **not** compute ipSAE or other confidence metrics: those
+need PAE rather than coordinates, that space is well served, and staying
+model-agnostic is what lets the same panel compare structures from different
+predictors.
+
 ## Install
 
 ```bash

@@ -127,7 +127,10 @@ Buried central residues keep `agg_fin = 0`. `a3d_score` is the peak;
 `a3d_total_positive` is the sum of positive values, which is what the Aggrescan3D
 server reports as its "A3D score". The `a3v` scale and every constant are taken
 verbatim from Aggrescan3D 1.0.2 and are regression-tested
-(`tests/test_constant_tables.py`). *Faithfulness caveat:* RSA here is
+(`tests/test_constant_tables.py`). The scale was checked against upstream's own
+`aggrescan/data/matrices/aggrescan.mat` on 2026-11-20 — **zero mismatches across
+all twenty residues**. That file is not vendored here, because Aggrescan3D is
+distributed "free for non-commercial users" and binderqc is MIT. *Faithfulness caveat:* RSA here is
 whole-residue relative SA from biotite with Tien max-ASA, whereas A3D uses
 freeSASA with naccess radii — absolute values track the reference closely but are
 not identical.
