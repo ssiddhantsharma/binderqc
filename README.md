@@ -77,30 +77,18 @@ required — a bare residue number is rejected rather than guessed at.
 
 ### Two exposure conventions, on purpose
 
-SAP, A3D and the charge patches are measured on the **free** binder, because
-they are surface properties of the molecule and their source definitions are
-written that way. The oxidation and deamidation flags default to the **complex**,
-asking whether a site is reachable while bound. `--degradation-context free`
-asks the other question — will it oxidise in the vial — and the two disagree
-exactly on interface residues. Each row records which convention produced it in
-`exposure_context_degradation` / `exposure_context_surface`; see
-[DEVELOPABILITY.md](DEVELOPABILITY.md).
-
-Scoring is CPU-only: no folding, no GPU, no network. Files in a batch are
-independent, so `-j` scales near-linearly across cores on large directories.
-
-Example output for the bundled LCB1 minibinder (a few of the columns):
-
-| recommended_tag | binder_bsa | epitope_planarity | epitope_aromatic_n | pi | qc_pass |
-|---|---|---|---|---|---|
-| C | 1021.4 | 3.21 | 11 | 4.17 | True |
-
-Its `warnings` field reads "both termini ~equidistant from interface (ambiguous)",
-a tag-site advisory, so `qc_pass` stays `True`.
+Exposure is computed either on the **complex** (is this site exposed while bound?)
+or on the **free** binder (is it exposed in solution?). Aggregation and patch
+columns always use `free`, because that is how their source definitions are
+written; `--degradation-context` picks the convention for the oxidation and
+deamidation checks. Mixing them silently is the failure mode —
+see [METHODS.md](METHODS.md#the-two-exposure-conventions).
 
 ## What it reports
 
 Per binder chain. Every number is CPU-only — no folding, no GPU, no network.
+**[METHODS.md](METHODS.md) defines every column**: the formula, the source it comes
+from, and where this implementation departs from it.
 
 **Interface** — buried surface area, interface residue count, H-bonds, salt bridges,
 contact-packing density, and buried unsatisfied polar atoms (`buns_interface`,
@@ -143,62 +131,13 @@ Met/Trp oxidation hotspots. Deamidation (N-[G/S/T]) and Asp isomerization (D-[G/
 are flagged **only when solvent-exposed** — a buried motif reacts far more slowly
 (Sydow et al. 2014), so a sequence-only hit over-predicts.
 
-### Glycan occlusion, and what this is not
+### Glycan occlusion
 
-`epitope_glyco_occluded` / `epitope_glyco_sites` flag N-glycosylation sequons
-(N-X-[S/T], X≠P) on the **target** that are both solvent-exposed and near the epitope,
-where an installed glycan would mask an otherwise grippable patch.
-
-Two details make it more than a sequence grep:
-
-- exposure is measured on the **free target**, not the complex. Glycans are installed
-  before the binder arrives, and in the complex an engaged epitope Asn reads as buried —
-  so complex SASA would hide exactly the sites that matter.
-- sequons are read off the modeled chain, so a gap from an unresolved loop cannot
-  fabricate a phantom site.
-
-**It is a proximity flag, not a glycan model.** The test is: sequon, exposed
-(relSASA ≥ 0.20), within 10 Å of the epitope. It does not build glycan conformations, so
-it cannot tell you *how much* of the accessible ensemble is blocked, and it says nothing
-about the entropic cost of a binder that restricts glycan flexibility — which can hurt
-affinity even when the pose is sterically fine.
-
-For that, use [GlycoSHIELD](https://gitlab.mpcdf.mpg.de/dioscuri-biophysics/glycoshield-md)
-(Gecht et al., [doi:10.1101/2021.08.04.455134](https://doi.org/10.1101/2021.08.04.455134)):
-graft conformer ensembles onto the site and ask what fraction stays compatible with each
-pose. The sensible division of labour is to let binderqc flag the sites cheaply across a
-whole batch, then run GlycoSHIELD on the candidates that survive.
-
-A `warnings` column flags problems: small, flat, anchorless, or glyco-occluded
-interfaces; buried, ambiguous, or interface-facing tag sites; hydrophobic
-sequences. `qc_pass` is true when there are no quality warnings (tag-site
-advisories like an ambiguous terminus do not count), and `--fasta` writes those
-binders.
-
-<details>
-<summary>Full column list</summary>
-
-`pdb, binder_chain, target_chains, n_interface_res, binder_bsa, n_hbonds,
-n_salt_bridges, buns_interface, interface_polar_satisfied_frac, interface_packing, approach_angle, epitope_planarity,
-epitope_hydrophobic_frac, epitope_aromatic_n, epitope_glyco_occluded,
-epitope_glyco_sites, nterm_resnum, nterm_resname,
-nterm_relsasa, nterm_dist_to_interface, nterm_orientation, nterm_sg_sasa,
-cterm_resnum, cterm_resname, cterm_relsasa, cterm_dist_to_interface,
-cterm_orientation, cterm_sg_sasa, recommended_tag, mw, gravy, pi, net_charge,
-lys_arg_pct, instability_index, ext_coeff_280, sap_score, sap_total, sap_per_res, a3d_score,
-a3d_total_positive, charge_patch_pos, charge_patch_neg, paratope_hydrophobicity,
-paratope_charge, paratope_res, sequence_liabilities, warnings, qc_pass,
-binder_sequence`
-
-With `--self-fold`, also `self_fold, self_bsa, self_n_interface_res,
-self_paratope_overlap_n, self_paratope_overlap_frac, self_paratope_enrichment,
-self_verdict, residues_matched`.
-
-</details>
-
-The literature basis for each developability metric — and which are well-supported
-versus weak heuristics you should report but not gate on — is in
-[DEVELOPABILITY.md](DEVELOPABILITY.md).
+Sequons on the **target** that are both exposed and at the epitope, where an
+installed glycan would mask the patch for a small binder. Exposure is measured on
+the target alone, and sequons are read off modelled residues so an unresolved loop
+cannot fabricate one. This flags a site worth checking, not a verified glycan —
+see [METHODS.md](METHODS.md#grippability).
 
 ## Tests
 
