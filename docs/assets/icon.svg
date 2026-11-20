@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="binderqc">
+  <title>binderqc</title>
+  <!-- Read at ~40px, so: one blue binder helix in a teal ring, nothing else.
+       Three elements is the most that survives at title size. -->
+  <circle cx="32" cy="32" r="29" fill="#14726a"/>
+  <path d="M17 42 C 24 26, 31 44, 38 28 C 42 19, 46 20, 49 23"
+        fill="none" stroke="#ffffff" stroke-width="9"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M17 42 C 24 26, 31 44, 38 28 C 42 19, 46 20, 49 23"
+        fill="none" stroke="#5aa9e6" stroke-width="5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

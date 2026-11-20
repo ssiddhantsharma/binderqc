@@ -1,4 +1,6 @@
-<h1 align="center">binderqc</h1>
+<h1 align="center">
+  <img src="docs/assets/icon.svg" alt="" width="42" align="absmiddle">&nbsp;binderqc
+</h1>
 
 <p align="center">
   Quality control and tag-site scoring for designed protein binders.
